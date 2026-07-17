@@ -199,7 +199,7 @@
       background: #2a2a2a;
       overflow: auto;
       position: relative;
-      padding: 20px;
+      padding: 0;
       transition: flex 0.2s;
     }
 
@@ -208,17 +208,18 @@
       position: relative;
       background: white;
       box-shadow: 0 4px 24px rgba(0,0,0,0.4);
-      border-radius: 4px;
+      border-radius: 0;
       overflow: hidden;
       transition: width 0.3s ease, border-color 0.3s;
-      flex-shrink: 0;
+      flex-shrink: 1;
+      flex-grow: 1;
       border: 3px solid transparent;
     }
     .iframe-container.comment-mode {
       border-color: var(--danger);
       box-shadow: 0 0 0 4px rgba(239,68,68,0.2), 0 4px 24px rgba(0,0,0,0.4);
     }
-    .iframe-container.desktop { width: 1280px; }
+    .iframe-container.desktop { width: 100%; max-width: 100%; }
     .iframe-container.tablet { width: 768px; }
     .iframe-container.mobile { width: 375px; }
     .iframe-container iframe { width: 100%; height: 100%; border: none; display: block; }
@@ -1051,9 +1052,14 @@
       const raw = localStorage.getItem(STORAGE_KEY + '_' + url);
       if (raw) {
         const data = JSON.parse(raw);
-        feedbackItems = data.items || [];
+        feedbackItems = (data.items || []).map(item => ({
+          ...item,
+          url: item.url || url,
+          replies: item.replies || []
+        }));
         nextId = data.nextId || feedbackItems.length + 1;
         if (data.project) document.getElementById('projectName').value = data.project;
+        saveState();
       } else {
         feedbackItems = [];
         nextId = 1;
@@ -1082,7 +1088,8 @@
       document.getElementById('splash').style.display = 'none';
       document.getElementById('imageContainer').style.display = 'none';
       document.getElementById('iframeBlocked').style.display = 'none';
-      document.getElementById('iframeContainer').style.display = 'block';
+      document.getElementById('iframeContainer').style.display = 'flex';
+      document.getElementById('iframeContainer').style.flexDirection = 'column';
       document.getElementById('toolbar').style.display = 'flex';
 
       const iframe = document.getElementById('previewFrame');
@@ -1092,22 +1099,33 @@
 
       setStatus('loading', 'Loading ' + url + '...');
 
+      let iframeLoaded = false;
       let loadTimeout = setTimeout(() => {
-        showIframeBlocked();
-      }, 8000);
+        if (!iframeLoaded) showIframeBlocked();
+      }, 6000);
 
       iframe.onload = () => {
         clearTimeout(loadTimeout);
+        iframeLoaded = true;
         try {
           const doc = iframe.contentDocument || iframe.contentWindow.document;
           if (!doc || !doc.body || doc.body.innerHTML === '') {
             showIframeBlocked();
             return;
           }
+          setStatus('ok', 'Loaded — switch to Comment mode to add feedback');
         } catch(e) {
-          // Cross-origin - can't access, but it loaded
+          setTimeout(() => {
+            try {
+              const w = iframe.contentWindow;
+              if (!w || iframe.clientHeight === 0) {
+                showIframeBlocked();
+                return;
+              }
+            } catch(e2) {}
+            setStatus('ok', 'Loaded — switch to Comment mode to add feedback');
+          }, 1000);
         }
-        setStatus('ok', 'Loaded — switch to Comment mode to add feedback');
       };
       iframe.onerror = () => {
         clearTimeout(loadTimeout);
@@ -1153,8 +1171,12 @@
     function updateIframeSize() {
       const container = document.getElementById('iframeContainer');
       container.className = 'iframe-container ' + currentDevice + (currentMode === 'comment' ? ' comment-mode' : '');
-      const heights = { desktop: '900px', tablet: '1024px', mobile: '812px' };
-      container.style.height = heights[currentDevice];
+      if (currentDevice === 'desktop') {
+        container.style.height = '100%';
+      } else {
+        const heights = { tablet: '1024px', mobile: '812px' };
+        container.style.height = heights[currentDevice];
+      }
     }
 
     function handleOverlayClick(event) {
