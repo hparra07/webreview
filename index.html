@@ -196,32 +196,51 @@
       flex: 1;
       display: flex;
       justify-content: center;
+      align-items: flex-start;
       background: #2a2a2a;
       overflow: auto;
       position: relative;
       padding: 0;
-      transition: flex 0.2s;
     }
 
-    /* Comment mode border */
+    /* Iframe container */
     .iframe-container {
       position: relative;
       background: white;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
-      border-radius: 0;
       overflow: hidden;
-      transition: width 0.3s ease, border-color 0.3s;
-      flex-shrink: 1;
-      flex-grow: 1;
+      transition: border-color 0.3s;
       border: 3px solid transparent;
     }
     .iframe-container.comment-mode {
       border-color: var(--danger);
-      box-shadow: 0 0 0 4px rgba(239,68,68,0.2), 0 4px 24px rgba(0,0,0,0.4);
+      box-shadow: 0 0 0 4px rgba(239,68,68,0.2);
     }
-    .iframe-container.desktop { width: 100%; max-width: 100%; }
-    .iframe-container.tablet { width: 768px; }
-    .iframe-container.mobile { width: 375px; }
+    .iframe-container.desktop {
+      width: 100%;
+      height: 100%;
+      flex-shrink: 1;
+      flex-grow: 1;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    .iframe-container.tablet {
+      width: 768px;
+      height: 1024px;
+      flex-shrink: 0;
+      flex-grow: 0;
+      border-radius: 4px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+      margin: 20px auto;
+    }
+    .iframe-container.mobile {
+      width: 375px;
+      height: 812px;
+      flex-shrink: 0;
+      flex-grow: 0;
+      border-radius: 4px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+      margin: 20px auto;
+    }
     .iframe-container iframe { width: 100%; height: 100%; border: none; display: block; }
 
     /* Comment mode label */
@@ -275,6 +294,24 @@
     .pin.active {
       transform: translate(-50%, -50%) scale(1.2);
       box-shadow: 0 0 0 3px rgba(99,102,241,0.5), 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    /* Selection rectangle on overlay */
+    .selection-rect {
+      position: absolute;
+      border: 2px dashed var(--danger);
+      background: rgba(239,68,68,0.08);
+      pointer-events: none;
+      z-index: 15;
+      border-radius: 3px;
+    }
+    .pin-selection-rect {
+      position: absolute;
+      border: 2px solid var(--accent);
+      background: rgba(99,102,241,0.06);
+      pointer-events: none;
+      z-index: 14;
+      border-radius: 3px;
     }
 
     /* Sidebar */
@@ -353,6 +390,15 @@
     .feedback-card-screenshot {
       width: 100%; border-radius: 4px; margin-top: 8px;
       cursor: zoom-in; border: 1px solid var(--border);
+    }
+    .feedback-card-selection {
+      display: inline-block;
+      font-size: 10px;
+      color: var(--accent);
+      background: rgba(99,102,241,0.1);
+      padding: 2px 6px;
+      border-radius: 3px;
+      margin-top: 4px;
     }
 
     /* Reply thread */
@@ -615,6 +661,7 @@
       border-radius: 12px;
       border: 1px solid var(--border);
       max-width: 500px;
+      margin: auto;
     }
     .iframe-blocked svg { margin-bottom: 16px; opacity: 0.6; }
     .iframe-blocked h3 { font-size: 16px; margin-bottom: 8px; }
@@ -661,7 +708,7 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
         Browse
       </button>
-      <button data-mode="comment" onclick="setMode('comment')" data-tooltip="Click anywhere to leave feedback">
+      <button data-mode="comment" onclick="setMode('comment')" data-tooltip="Click to pin, drag to select area">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
         Comment
       </button>
@@ -671,7 +718,7 @@
 
     <!-- Device toggle -->
     <div class="device-toggle">
-      <button class="active" data-device="desktop" onclick="setDevice('desktop')" data-tooltip="Desktop 1280px">
+      <button class="active" data-device="desktop" onclick="setDevice('desktop')" data-tooltip="Desktop (full width)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
         Desktop
       </button>
@@ -718,16 +765,22 @@
 
       <!-- Iframe container -->
       <div class="iframe-container desktop" id="iframeContainer" style="display:none;">
-        <div class="comment-mode-label">COMMENT MODE — Click to add feedback</div>
+        <div class="comment-mode-label">COMMENT MODE — Click to pin, drag to select area</div>
         <iframe id="previewFrame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
-        <div class="pin-overlay disabled" id="pinOverlay" onclick="handleOverlayClick(event)"></div>
+        <div class="pin-overlay disabled" id="pinOverlay"></div>
+        <div id="iframeFallbackBar" style="display:none; position:absolute; bottom:0; left:0; right:0; background:rgba(15,17,23,0.9); padding:8px 16px; text-align:center; z-index:40; font-size:12px; color:var(--text-muted); backdrop-filter:blur(4px);">
+          Can't see the page?
+          <a href="#" onclick="event.preventDefault();showIframeBlocked();" style="color:var(--accent);text-decoration:underline;margin-left:4px;">Upload a screenshot instead</a>
+          <span style="margin:0 8px;color:var(--border);">|</span>
+          <a href="#" onclick="event.preventDefault();window.open(currentUrl,'_blank');" style="color:var(--accent);text-decoration:underline;">Open in new tab</a>
+        </div>
       </div>
 
       <!-- Iframe blocked fallback -->
       <div class="iframe-blocked" id="iframeBlocked" style="display:none;">
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
         <h3>This site blocks iframe embedding</h3>
-        <p>The website has security headers (X-Frame-Options / CSP) that prevent it from loading inside WebReview. You can upload a screenshot instead to review it visually.</p>
+        <p>The website has security headers that prevent it from loading inside WebReview. You can upload a screenshot to review it visually.</p>
         <div class="blocked-actions">
           <button class="btn btn-primary" onclick="document.getElementById('blockedFileInput').click()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
@@ -743,9 +796,9 @@
 
       <!-- Image review container -->
       <div id="imageContainer" style="display:none;">
-        <div class="comment-mode-label">COMMENT MODE — Click to add feedback</div>
+        <div class="comment-mode-label">COMMENT MODE — Click to pin, drag to select area</div>
         <img id="reviewImage" style="max-width:100%; display:block; border-radius:4px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);">
-        <div class="pin-overlay disabled" id="imagePinOverlay" onclick="handleOverlayClick(event)"></div>
+        <div class="pin-overlay disabled" id="imagePinOverlay"></div>
       </div>
     </div>
 
@@ -842,10 +895,13 @@
     let pendingCommentForm = null;
     let isImageMode = false;
     let nextId = 1;
+    let isDragging = false;
+    let dragStart = null;
+    let selectionRect = null;
 
-    const params = new URLSearchParams(window.location.search);
-    const isAdmin = params.has('admin');
-    const projectParam = params.get('project');
+    const urlParams = new URLSearchParams(window.location.search);
+    const isAdmin = urlParams.has('admin');
+    const projectParam = urlParams.get('project');
 
     if (isAdmin) document.body.classList.add('admin-mode');
 
@@ -856,6 +912,15 @@
     };
 
     const STORAGE_KEY = 'webreview_data';
+
+    function normalizeUrl(url) {
+      try {
+        const u = new URL(url);
+        let normalized = u.origin + u.pathname;
+        if (normalized.endsWith('/') && u.pathname !== '/') normalized = normalized.slice(0, -1);
+        return normalized;
+      } catch(e) { return url; }
+    }
 
     // ---- Mode Toggle ----
     function setMode(mode) {
@@ -874,7 +939,7 @@
         if (imgOverlay) imgOverlay.classList.remove('disabled');
         container.classList.add('comment-mode');
         imgContainer.classList.add('comment-mode');
-        setStatus('ok', 'Comment mode — click anywhere to add feedback');
+        setStatus('ok', 'Comment mode — click to pin, drag to select area');
       } else {
         overlay.classList.add('disabled');
         if (imgOverlay) imgOverlay.classList.add('disabled');
@@ -884,6 +949,66 @@
         setStatus('ok', 'Browse mode — navigate freely');
       }
     }
+
+    // ---- Overlay events (click + drag) ----
+    function initOverlay(overlay) {
+      overlay.addEventListener('mousedown', (e) => {
+        if (currentMode !== 'comment') return;
+        if (pendingCommentForm) { pendingCommentForm.remove(); pendingCommentForm = null; return; }
+        const rect = overlay.getBoundingClientRect();
+        dragStart = { x: e.clientX - rect.left, y: e.clientY - rect.top, rect };
+        isDragging = false;
+      });
+
+      overlay.addEventListener('mousemove', (e) => {
+        if (!dragStart) return;
+        const rect = dragStart.rect;
+        const dx = (e.clientX - rect.left) - dragStart.x;
+        const dy = (e.clientY - rect.top) - dragStart.y;
+        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+          isDragging = true;
+          if (!selectionRect) {
+            selectionRect = document.createElement('div');
+            selectionRect.className = 'selection-rect';
+            overlay.appendChild(selectionRect);
+          }
+          const sx = Math.min(dragStart.x, e.clientX - rect.left);
+          const sy = Math.min(dragStart.y, e.clientY - rect.top);
+          const sw = Math.abs(dx);
+          const sh = Math.abs(dy);
+          selectionRect.style.left = sx + 'px';
+          selectionRect.style.top = sy + 'px';
+          selectionRect.style.width = sw + 'px';
+          selectionRect.style.height = sh + 'px';
+        }
+      });
+
+      overlay.addEventListener('mouseup', (e) => {
+        if (!dragStart) return;
+        const rect = dragStart.rect;
+        if (isDragging && selectionRect) {
+          const x1Pct = (parseFloat(selectionRect.style.left) / rect.width) * 100;
+          const y1Pct = (parseFloat(selectionRect.style.top) / rect.height) * 100;
+          const x2Pct = x1Pct + (parseFloat(selectionRect.style.width) / rect.width) * 100;
+          const y2Pct = y1Pct + (parseFloat(selectionRect.style.height) / rect.height) * 100;
+          const centerX = (x1Pct + x2Pct) / 2;
+          const centerY = (y1Pct + y2Pct) / 2;
+          showCommentForm(overlay, parseFloat(selectionRect.style.left), parseFloat(selectionRect.style.top) + parseFloat(selectionRect.style.height) + 10, centerX, centerY, { x1: x1Pct, y1: y1Pct, x2: x2Pct, y2: y2Pct });
+          selectionRect.remove();
+          selectionRect = null;
+        } else {
+          const xPct = ((e.clientX - rect.left) / rect.width) * 100;
+          const yPct = ((e.clientY - rect.top) / rect.height) * 100;
+          showCommentForm(overlay, e.clientX - rect.left, e.clientY - rect.top, xPct, yPct, null);
+        }
+        dragStart = null;
+        isDragging = false;
+      });
+    }
+
+    // Init overlays
+    initOverlay(document.getElementById('pinOverlay'));
+    initOverlay(document.getElementById('imagePinOverlay'));
 
     // ---- Projects ----
     function getProjects() {
@@ -913,7 +1038,6 @@
       let projects = getProjects();
       const grid = document.getElementById('projectsGrid');
 
-      // If client has ?project= param, only show matching projects
       if (projectParam && !isAdmin) {
         projects = projects.filter(p =>
           p.project.toLowerCase() === projectParam.toLowerCase()
@@ -970,10 +1094,10 @@
 
     async function sheetsRequest(action, data) {
       if (!sheetsConfig.url) throw new Error('No Sheets URL configured');
-      const params = new URLSearchParams();
-      params.append('action', action);
-      if (data) params.append('data', JSON.stringify(data));
-      const resp = await fetch(sheetsConfig.url + '?' + params.toString(), { method: 'GET', redirect: 'follow' });
+      const p = new URLSearchParams();
+      p.append('action', action);
+      if (data) p.append('data', JSON.stringify(data));
+      const resp = await fetch(sheetsConfig.url + '?' + p.toString(), { method: 'GET', redirect: 'follow' });
       return resp.json();
     }
 
@@ -1045,19 +1169,20 @@
     // ---- Core ----
     function saveState() {
       const data = { project: document.getElementById('projectName').value, url: currentUrl, items: feedbackItems, nextId };
-      localStorage.setItem(STORAGE_KEY + '_' + (currentUrl || 'draft'), JSON.stringify(data));
+      localStorage.setItem(STORAGE_KEY + '_' + normalizeUrl(currentUrl), JSON.stringify(data));
     }
 
     function loadState(url) {
-      const raw = localStorage.getItem(STORAGE_KEY + '_' + url);
+      const key = STORAGE_KEY + '_' + normalizeUrl(url);
+      const raw = localStorage.getItem(key);
       if (raw) {
         const data = JSON.parse(raw);
         feedbackItems = (data.items || []).map(item => ({
           ...item,
-          url: item.url || url,
+          url: normalizeUrl(item.url || url),
           replies: item.replies || []
         }));
-        nextId = data.nextId || feedbackItems.length + 1;
+        nextId = feedbackItems.length > 0 ? Math.max(...feedbackItems.map(f => f.id)) + 1 : 1;
         if (data.project) document.getElementById('projectName').value = data.project;
         saveState();
       } else {
@@ -1066,14 +1191,17 @@
       }
       renderFeedback();
       renderPins();
+      updateCommentBadge();
     }
 
     function showSplash() {
+      currentUrl = '';
       document.getElementById('splash').style.display = 'flex';
       document.getElementById('iframeContainer').style.display = 'none';
       document.getElementById('iframeBlocked').style.display = 'none';
       document.getElementById('imageContainer').style.display = 'none';
       document.getElementById('toolbar').style.display = 'none';
+      feedbackItems = [];
       renderProjects();
     }
 
@@ -1082,15 +1210,14 @@
       if (!url) return;
       if (!url.startsWith('http')) url = 'https://' + url;
       document.getElementById('urlInput').value = url;
-      currentUrl = url;
+      currentUrl = normalizeUrl(url);
       isImageMode = false;
 
       document.getElementById('splash').style.display = 'none';
       document.getElementById('imageContainer').style.display = 'none';
       document.getElementById('iframeBlocked').style.display = 'none';
-      document.getElementById('iframeContainer').style.display = 'flex';
-      document.getElementById('iframeContainer').style.flexDirection = 'column';
       document.getElementById('toolbar').style.display = 'flex';
+      updateIframeSize();
 
       const iframe = document.getElementById('previewFrame');
       iframe.src = url;
@@ -1098,11 +1225,12 @@
       setMode('browse');
 
       setStatus('loading', 'Loading ' + url + '...');
+      document.getElementById('iframeFallbackBar').style.display = 'none';
 
       let iframeLoaded = false;
       let loadTimeout = setTimeout(() => {
         if (!iframeLoaded) showIframeBlocked();
-      }, 6000);
+      }, 5000);
 
       iframe.onload = () => {
         clearTimeout(loadTimeout);
@@ -1115,16 +1243,8 @@
           }
           setStatus('ok', 'Loaded — switch to Comment mode to add feedback');
         } catch(e) {
-          setTimeout(() => {
-            try {
-              const w = iframe.contentWindow;
-              if (!w || iframe.clientHeight === 0) {
-                showIframeBlocked();
-                return;
-              }
-            } catch(e2) {}
-            setStatus('ok', 'Loaded — switch to Comment mode to add feedback');
-          }, 1000);
+          setStatus('ok', 'Loaded — switch to Comment mode to add feedback');
+          document.getElementById('iframeFallbackBar').style.display = 'block';
         }
       };
       iframe.onerror = () => {
@@ -1132,7 +1252,7 @@
         showIframeBlocked();
       };
 
-      loadState(url);
+      loadState(currentUrl);
     }
 
     function showIframeBlocked() {
@@ -1146,7 +1266,7 @@
       if (!file) return;
       const reader = new FileReader();
       reader.onload = (e) => {
-        currentUrl = currentUrl || 'image:' + file.name;
+        if (!currentUrl || currentUrl === '') currentUrl = 'image:' + file.name;
         isImageMode = true;
         document.getElementById('splash').style.display = 'none';
         document.getElementById('iframeContainer').style.display = 'none';
@@ -1171,31 +1291,28 @@
     function updateIframeSize() {
       const container = document.getElementById('iframeContainer');
       container.className = 'iframe-container ' + currentDevice + (currentMode === 'comment' ? ' comment-mode' : '');
+      container.style.removeProperty('height');
+      container.style.removeProperty('width');
+      container.style.removeProperty('flex-direction');
+      container.style.removeProperty('flex-grow');
+      container.style.removeProperty('flex-shrink');
       if (currentDevice === 'desktop') {
-        container.style.height = '100%';
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
       } else {
-        const heights = { tablet: '1024px', mobile: '812px' };
-        container.style.height = heights[currentDevice];
+        container.style.display = 'block';
       }
     }
 
-    function handleOverlayClick(event) {
-      if (currentMode !== 'comment') return;
-      if (pendingCommentForm) { pendingCommentForm.remove(); pendingCommentForm = null; return; }
-      const overlay = event.currentTarget;
-      const rect = overlay.getBoundingClientRect();
-      const xPercent = ((event.clientX - rect.left) / rect.width) * 100;
-      const yPercent = ((event.clientY - rect.top) / rect.height) * 100;
-      showCommentForm(overlay, event.clientX - rect.left, event.clientY - rect.top, xPercent, yPercent);
-    }
-
-    function showCommentForm(parent, x, y, xPct, yPct) {
+    function showCommentForm(parent, x, y, xPct, yPct, selection) {
       if (pendingCommentForm) pendingCommentForm.remove();
       const form = document.createElement('div');
       form.className = 'comment-form';
       form.style.left = Math.min(x, parent.offsetWidth - 320) + 'px';
-      form.style.top = y + 'px';
+      form.style.top = Math.min(y, parent.offsetHeight - 200) + 'px';
+      const selLabel = selection ? '<div style="font-size:11px;color:var(--accent);margin-bottom:6px;">Area selected</div>' : '';
       form.innerHTML = `
+        ${selLabel}
         <textarea placeholder="Describe the issue or suggestion..." autofocus></textarea>
         <div class="priority-select">
           <button class="active" data-priority="normal" onclick="selectPriority(this)">Normal</button>
@@ -1204,15 +1321,18 @@
         </div>
         <div class="comment-form-actions">
           <button class="btn btn-secondary" onclick="cancelComment()">Cancel</button>
-          <button class="btn btn-primary" onclick="submitComment(${xPct}, ${yPct})">Add</button>
+          <button class="btn btn-primary" id="submitBtn">Add</button>
         </div>
       `;
       form.onclick = (e) => e.stopPropagation();
       parent.appendChild(form);
       form.querySelector('textarea').focus();
       pendingCommentForm = form;
+
+      const submitBtn = form.querySelector('#submitBtn');
+      submitBtn.onclick = () => submitComment(xPct, yPct, selection);
       form.querySelector('textarea').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitComment(xPct, yPct);
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitComment(xPct, yPct, selection);
         if (e.key === 'Escape') cancelComment();
       });
     }
@@ -1225,7 +1345,7 @@
       if (pendingCommentForm) { pendingCommentForm.remove(); pendingCommentForm = null; }
     }
 
-    function submitComment(xPct, yPct) {
+    function submitComment(xPct, yPct, selection) {
       const textarea = pendingCommentForm.querySelector('textarea');
       const comment = textarea.value.trim();
       if (!comment) { textarea.focus(); return; }
@@ -1234,16 +1354,23 @@
         id: nextId++, x: xPct, y: yPct, comment, priority,
         device: currentDevice, status: 'open',
         timestamp: new Date().toISOString(), url: currentUrl,
-        screenshot: null, replies: []
+        screenshot: null, replies: [],
+        selection: selection || null
       };
       feedbackItems.push(item);
       cancelComment();
+      renumberItems();
       renderFeedback();
       renderPins();
       saveState();
       updateCommentBadge();
       setStatus('ok', `Comment #${item.id} added`);
       syncItemToSheets(item, 'add');
+    }
+
+    function renumberItems() {
+      feedbackItems.forEach((item, i) => { item.id = i + 1; });
+      nextId = feedbackItems.length + 1;
     }
 
     function addReply(id) {
@@ -1267,16 +1394,31 @@
       const overlays = [document.getElementById('pinOverlay'), document.getElementById('imagePinOverlay')];
       overlays.forEach(overlay => {
         if (!overlay) return;
-        overlay.querySelectorAll('.pin').forEach(p => p.remove());
+        overlay.querySelectorAll('.pin, .pin-selection-rect').forEach(p => p.remove());
 
+        const nUrl = normalizeUrl(currentUrl);
         const visibleItems = feedbackItems.filter(item => {
-          if (item.url !== currentUrl) return false;
+          if (normalizeUrl(item.url) !== nUrl) return false;
           if (activeFilter === 'open') return item.status === 'open';
           if (activeFilter === 'resolved') return item.status === 'resolved';
           return true;
         });
 
         visibleItems.forEach(item => {
+          if (item.selection) {
+            const rect = document.createElement('div');
+            rect.className = 'pin-selection-rect';
+            rect.style.left = item.selection.x1 + '%';
+            rect.style.top = item.selection.y1 + '%';
+            rect.style.width = (item.selection.x2 - item.selection.x1) + '%';
+            rect.style.height = (item.selection.y2 - item.selection.y1) + '%';
+            if (activeFeedbackId === item.id) {
+              rect.style.borderColor = 'var(--danger)';
+              rect.style.background = 'rgba(239,68,68,0.1)';
+            }
+            overlay.appendChild(rect);
+          }
+
           const pin = document.createElement('div');
           pin.className = 'pin' + (item.status === 'resolved' ? ' resolved' : '') + (activeFeedbackId === item.id ? ' active' : '');
           pin.style.left = item.x + '%';
@@ -1291,8 +1433,9 @@
 
     function renderFeedback() {
       const list = document.getElementById('feedbackList');
+      const nUrl = normalizeUrl(currentUrl);
       const filtered = feedbackItems.filter(item => {
-        if (item.url !== currentUrl) return false;
+        if (normalizeUrl(item.url) !== nUrl) return false;
         if (activeFilter === 'open') return item.status === 'open';
         if (activeFilter === 'resolved') return item.status === 'resolved';
         return true;
@@ -1319,6 +1462,7 @@
             <div class="feedback-card-number">${item.id}</div>
             <span class="feedback-card-device">${item.device}</span>
             ${item.priority !== 'normal' ? `<span style="font-size:11px;color:${item.priority === 'critical' ? 'var(--danger)' : 'var(--warning)'};">${item.priority}</span>` : ''}
+            ${item.selection ? '<span class="feedback-card-selection">Area</span>' : ''}
             <div class="feedback-card-actions">
               <button onclick="event.stopPropagation();toggleResolved(${item.id})" title="${item.status === 'resolved' ? 'Reopen' : 'Resolve'}">${item.status === 'resolved' ? '&#8617;' : '&#10003;'}</button>
               <button class="admin-only" onclick="event.stopPropagation();deleteFeedback(${item.id})" title="Delete">&#10005;</button>
@@ -1357,6 +1501,7 @@
     function deleteFeedback(id) {
       feedbackItems = feedbackItems.filter(f => f.id !== id);
       if (activeFeedbackId === id) activeFeedbackId = null;
+      renumberItems();
       renderFeedback(); renderPins(); saveState(); updateCommentBadge();
       if (sheetsConfig.connected && sheetsConfig.autoSync) {
         fetch(sheetsConfig.url + '?action=delete&id=' + id, { redirect: 'follow' }).catch(() => {});
@@ -1381,7 +1526,8 @@
     }
 
     function updateCommentBadge() {
-      const currentItems = feedbackItems.filter(f => f.url === currentUrl);
+      const nUrl = normalizeUrl(currentUrl);
+      const currentItems = feedbackItems.filter(f => normalizeUrl(f.url) === nUrl);
       const open = currentItems.filter(f => f.status === 'open').length;
       const badge = document.getElementById('commentBadge');
       if (open > 0) { badge.style.display = 'flex'; badge.textContent = open; }
@@ -1397,7 +1543,7 @@
           status: item.status, device: item.device,
           position: { x: item.x.toFixed(2) + '%', y: item.y.toFixed(2) + '%' },
           timestamp: item.timestamp, hasScreenshot: !!item.screenshot,
-          replies: item.replies || []
+          replies: item.replies || [], selection: item.selection || null
         }))
       };
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -1418,12 +1564,12 @@
           if (data.items && Array.isArray(data.items)) {
             feedbackItems = data.items.map((item, i) => ({
               ...item, x: parseFloat(item.position?.x) || item.x || 0,
-              y: parseFloat(item.position?.y) || item.y || 0, id: item.id || i + 1,
-              replies: item.replies || []
+              y: parseFloat(item.position?.y) || item.y || 0, id: i + 1,
+              replies: item.replies || [], selection: item.selection || null
             }));
-            nextId = Math.max(...feedbackItems.map(f => f.id), 0) + 1;
+            nextId = feedbackItems.length + 1;
             if (data.project) document.getElementById('projectName').value = data.project;
-            if (data.url) { document.getElementById('urlInput').value = data.url; currentUrl = data.url; }
+            if (data.url) { document.getElementById('urlInput').value = data.url; currentUrl = normalizeUrl(data.url); }
             renderFeedback(); renderPins(); saveState(); updateCommentBadge();
           }
         } catch(err) { setStatus('error', 'Invalid JSON file'); }
@@ -1441,7 +1587,8 @@
       document.getElementById('statusText').textContent = msg;
     }
     function updateCount() {
-      const currentItems = feedbackItems.filter(f => f.url === currentUrl);
+      const nUrl = normalizeUrl(currentUrl);
+      const currentItems = feedbackItems.filter(f => normalizeUrl(f.url) === nUrl);
       const open = currentItems.filter(f => f.status === 'open').length;
       document.getElementById('feedbackCount').textContent = `${open} open / ${currentItems.length} total`;
     }
@@ -1452,8 +1599,40 @@
       return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     }
 
+    // ---- Migrate old localStorage keys ----
+    (function migrateOldData() {
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith(STORAGE_KEY + '_')) {
+          const urlPart = key.slice((STORAGE_KEY + '_').length);
+          const normalized = normalizeUrl(urlPart);
+          if (normalized !== urlPart) {
+            const newKey = STORAGE_KEY + '_' + normalized;
+            if (!localStorage.getItem(newKey)) {
+              const data = localStorage.getItem(key);
+              localStorage.setItem(newKey, data);
+            }
+            keysToRemove.push(key);
+          }
+          try {
+            const data = JSON.parse(localStorage.getItem(key));
+            if (data && data.items) {
+              let changed = false;
+              data.items = data.items.map(item => {
+                if (!item.url) { changed = true; return { ...item, url: normalized, replies: item.replies || [] }; }
+                if (!item.replies) { changed = true; return { ...item, replies: [] }; }
+                return item;
+              });
+              if (changed) localStorage.setItem(key, JSON.stringify(data));
+            }
+          } catch(e) {}
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+    })();
+
     // ---- Init ----
-    // If ?project= param, auto-load that project
     if (projectParam && !isAdmin) {
       const projects = getProjects();
       const match = projects.find(p => p.project.toLowerCase() === projectParam.toLowerCase());
