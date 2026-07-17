@@ -200,6 +200,7 @@
       overflow: auto;
       position: relative;
       padding: 20px;
+      transition: flex 0.2s;
     }
 
     /* Comment mode border */
@@ -352,6 +353,58 @@
       width: 100%; border-radius: 4px; margin-top: 8px;
       cursor: zoom-in; border: 1px solid var(--border);
     }
+
+    /* Reply thread */
+    .reply-thread {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+    .reply-item {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 6px;
+      padding: 6px 8px;
+      background: var(--bg);
+      border-radius: 6px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .reply-item .reply-author {
+      font-weight: 600;
+      color: var(--accent);
+      white-space: nowrap;
+      font-size: 11px;
+    }
+    .reply-item .reply-text { color: var(--text); flex: 1; }
+    .reply-item .reply-time { color: var(--text-muted); font-size: 10px; white-space: nowrap; align-self: flex-end; }
+    .reply-form {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .reply-form input {
+      flex: 1;
+      padding: 6px 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 12px;
+      outline: none;
+    }
+    .reply-form input:focus { border-color: var(--accent); }
+    .reply-form button {
+      padding: 6px 12px;
+      background: var(--accent);
+      border: none;
+      border-radius: 6px;
+      color: white;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .reply-form button:hover { background: var(--accent-hover); }
 
     /* Comment Form */
     .comment-form {
@@ -548,6 +601,25 @@
     }
     #imageContainer.comment-mode { border: 3px solid var(--danger); border-radius: 4px; box-shadow: 0 0 0 4px rgba(239,68,68,0.2); }
     #imageContainer.comment-mode .comment-mode-label { display: block; }
+
+    /* Iframe blocked fallback */
+    .iframe-blocked {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 40px;
+      text-align: center;
+      background: var(--surface);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      max-width: 500px;
+    }
+    .iframe-blocked svg { margin-bottom: 16px; opacity: 0.6; }
+    .iframe-blocked h3 { font-size: 16px; margin-bottom: 8px; }
+    .iframe-blocked p { font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 20px; }
+    .iframe-blocked .blocked-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+    .iframe-blocked input[type="file"] { display: none; }
   </style>
 </head>
 <body>
@@ -555,7 +627,7 @@
   <!-- Top Bar -->
   <div class="topbar">
     <div class="logo" onclick="showSplash()">WebReview</div>
-    <input type="text" class="project-input" id="projectName" placeholder="Project name...">
+    <input type="text" class="project-input admin-only" id="projectName" placeholder="Project name...">
     <div class="url-input-wrap">
       <input type="url" id="urlInput" placeholder="Enter URL to review (e.g. https://example.com)" onkeydown="if(event.key==='Enter')loadUrl()" />
       <button class="btn btn-primary" onclick="loadUrl()">
@@ -648,6 +720,24 @@
         <div class="comment-mode-label">COMMENT MODE — Click to add feedback</div>
         <iframe id="previewFrame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
         <div class="pin-overlay disabled" id="pinOverlay" onclick="handleOverlayClick(event)"></div>
+      </div>
+
+      <!-- Iframe blocked fallback -->
+      <div class="iframe-blocked" id="iframeBlocked" style="display:none;">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+        <h3>This site blocks iframe embedding</h3>
+        <p>The website has security headers (X-Frame-Options / CSP) that prevent it from loading inside WebReview. You can upload a screenshot instead to review it visually.</p>
+        <div class="blocked-actions">
+          <button class="btn btn-primary" onclick="document.getElementById('blockedFileInput').click()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            Upload Screenshot
+          </button>
+          <button class="btn btn-secondary" onclick="window.open(currentUrl, '_blank')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
+            Open in New Tab
+          </button>
+        </div>
+        <input type="file" id="blockedFileInput" accept="image/*" onchange="loadImage(event)">
       </div>
 
       <!-- Image review container -->
@@ -745,15 +835,17 @@
     let feedbackItems = [];
     let currentDevice = 'desktop';
     let currentUrl = '';
-    let currentMode = 'browse'; // 'browse' or 'comment'
+    let currentMode = 'browse';
     let activeFilter = 'all';
     let activeFeedbackId = null;
     let pendingCommentForm = null;
     let isImageMode = false;
     let nextId = 1;
-    const isAdmin = new URLSearchParams(window.location.search).has('admin');
 
-    // Admin mode
+    const params = new URLSearchParams(window.location.search);
+    const isAdmin = params.has('admin');
+    const projectParam = params.get('project');
+
     if (isAdmin) document.body.classList.add('admin-mode');
 
     // Google Sheets config
@@ -763,7 +855,6 @@
     };
 
     const STORAGE_KEY = 'webreview_data';
-    const PROJECTS_KEY = 'webreview_projects';
 
     // ---- Mode Toggle ----
     function setMode(mode) {
@@ -818,8 +909,16 @@
     }
 
     function renderProjects() {
-      const projects = getProjects();
+      let projects = getProjects();
       const grid = document.getElementById('projectsGrid');
+
+      // If client has ?project= param, only show matching projects
+      if (projectParam && !isAdmin) {
+        projects = projects.filter(p =>
+          p.project.toLowerCase() === projectParam.toLowerCase()
+        );
+      }
+
       if (projects.length === 0) {
         grid.innerHTML = '';
         return;
@@ -955,19 +1054,18 @@
         feedbackItems = data.items || [];
         nextId = data.nextId || feedbackItems.length + 1;
         if (data.project) document.getElementById('projectName').value = data.project;
-        renderFeedback();
-        renderPins();
       } else {
         feedbackItems = [];
         nextId = 1;
-        renderFeedback();
-        renderPins();
       }
+      renderFeedback();
+      renderPins();
     }
 
     function showSplash() {
       document.getElementById('splash').style.display = 'flex';
       document.getElementById('iframeContainer').style.display = 'none';
+      document.getElementById('iframeBlocked').style.display = 'none';
       document.getElementById('imageContainer').style.display = 'none';
       document.getElementById('toolbar').style.display = 'none';
       renderProjects();
@@ -983,6 +1081,7 @@
 
       document.getElementById('splash').style.display = 'none';
       document.getElementById('imageContainer').style.display = 'none';
+      document.getElementById('iframeBlocked').style.display = 'none';
       document.getElementById('iframeContainer').style.display = 'block';
       document.getElementById('toolbar').style.display = 'flex';
 
@@ -992,10 +1091,36 @@
       setMode('browse');
 
       setStatus('loading', 'Loading ' + url + '...');
-      iframe.onload = () => setStatus('ok', 'Loaded — switch to Comment mode to add feedback');
-      iframe.onerror = () => setStatus('error', 'Could not load page — CORS may be blocking iframe');
+
+      let loadTimeout = setTimeout(() => {
+        showIframeBlocked();
+      }, 8000);
+
+      iframe.onload = () => {
+        clearTimeout(loadTimeout);
+        try {
+          const doc = iframe.contentDocument || iframe.contentWindow.document;
+          if (!doc || !doc.body || doc.body.innerHTML === '') {
+            showIframeBlocked();
+            return;
+          }
+        } catch(e) {
+          // Cross-origin - can't access, but it loaded
+        }
+        setStatus('ok', 'Loaded — switch to Comment mode to add feedback');
+      };
+      iframe.onerror = () => {
+        clearTimeout(loadTimeout);
+        showIframeBlocked();
+      };
 
       loadState(url);
+    }
+
+    function showIframeBlocked() {
+      document.getElementById('iframeContainer').style.display = 'none';
+      document.getElementById('iframeBlocked').style.display = 'flex';
+      setStatus('error', 'Site blocked iframe embedding — upload a screenshot instead');
     }
 
     function loadImage(event) {
@@ -1003,10 +1128,11 @@
       if (!file) return;
       const reader = new FileReader();
       reader.onload = (e) => {
-        currentUrl = 'image:' + file.name;
+        currentUrl = currentUrl || 'image:' + file.name;
         isImageMode = true;
         document.getElementById('splash').style.display = 'none';
         document.getElementById('iframeContainer').style.display = 'none';
+        document.getElementById('iframeBlocked').style.display = 'none';
         document.getElementById('imageContainer').style.display = 'block';
         document.getElementById('toolbar').style.display = 'flex';
         document.getElementById('reviewImage').src = e.target.result;
@@ -1085,7 +1211,8 @@
       const item = {
         id: nextId++, x: xPct, y: yPct, comment, priority,
         device: currentDevice, status: 'open',
-        timestamp: new Date().toISOString(), url: currentUrl, screenshot: null
+        timestamp: new Date().toISOString(), url: currentUrl,
+        screenshot: null, replies: []
       };
       feedbackItems.push(item);
       cancelComment();
@@ -1097,16 +1224,36 @@
       syncItemToSheets(item, 'add');
     }
 
+    function addReply(id) {
+      const input = document.getElementById('reply-input-' + id);
+      const text = input.value.trim();
+      if (!text) return;
+      const item = feedbackItems.find(f => f.id === id);
+      if (!item) return;
+      if (!item.replies) item.replies = [];
+      item.replies.push({
+        text,
+        author: isAdmin ? 'Admin' : 'Client',
+        timestamp: new Date().toISOString()
+      });
+      renderFeedback();
+      saveState();
+      syncItemToSheets({ id: item.id, comment: item.comment + '\n[Reply: ' + text + ']' }, 'update');
+    }
+
     function renderPins() {
       const overlays = [document.getElementById('pinOverlay'), document.getElementById('imagePinOverlay')];
       overlays.forEach(overlay => {
         if (!overlay) return;
         overlay.querySelectorAll('.pin').forEach(p => p.remove());
+
         const visibleItems = feedbackItems.filter(item => {
+          if (item.url !== currentUrl) return false;
           if (activeFilter === 'open') return item.status === 'open';
           if (activeFilter === 'resolved') return item.status === 'resolved';
           return true;
         });
+
         visibleItems.forEach(item => {
           const pin = document.createElement('div');
           pin.className = 'pin' + (item.status === 'resolved' ? ' resolved' : '') + (activeFeedbackId === item.id ? ' active' : '');
@@ -1123,6 +1270,7 @@
     function renderFeedback() {
       const list = document.getElementById('feedbackList');
       const filtered = feedbackItems.filter(item => {
+        if (item.url !== currentUrl) return false;
         if (activeFilter === 'open') return item.status === 'open';
         if (activeFilter === 'resolved') return item.status === 'resolved';
         return true;
@@ -1134,7 +1282,16 @@
         </div>`;
         return;
       }
-      list.innerHTML = filtered.map(item => `
+      list.innerHTML = filtered.map(item => {
+        const replies = (item.replies || []).map(r => `
+          <div class="reply-item">
+            <span class="reply-author">${escapeHtml(r.author)}</span>
+            <span class="reply-text">${escapeHtml(r.text)}</span>
+            <span class="reply-time">${formatDate(r.timestamp)}</span>
+          </div>
+        `).join('');
+
+        return `
         <div class="feedback-card ${item.status === 'resolved' ? 'resolved' : ''} ${activeFeedbackId === item.id ? 'active' : ''}" onclick="selectFeedback(${item.id})">
           <div class="feedback-card-header">
             <div class="feedback-card-number">${item.id}</div>
@@ -1148,8 +1305,15 @@
           <div class="feedback-card-comment">${escapeHtml(item.comment)}</div>
           ${item.screenshot ? `<img class="feedback-card-screenshot" src="${item.screenshot}" onclick="event.stopPropagation();showScreenshot(this.src)" alt="Screenshot">` : ''}
           <div class="feedback-card-meta">${formatDate(item.timestamp)} · ${item.x.toFixed(0)}%, ${item.y.toFixed(0)}%</div>
+          <div class="reply-thread" onclick="event.stopPropagation()">
+            ${replies}
+            <div class="reply-form">
+              <input type="text" id="reply-input-${item.id}" placeholder="Reply..." onkeydown="if(event.key==='Enter')addReply(${item.id})">
+              <button onclick="addReply(${item.id})">Reply</button>
+            </div>
+          </div>
         </div>
-      `).join('');
+      `}).join('');
       updateCount();
     }
 
@@ -1195,7 +1359,8 @@
     }
 
     function updateCommentBadge() {
-      const open = feedbackItems.filter(f => f.status === 'open').length;
+      const currentItems = feedbackItems.filter(f => f.url === currentUrl);
+      const open = currentItems.filter(f => f.status === 'open').length;
       const badge = document.getElementById('commentBadge');
       if (open > 0) { badge.style.display = 'flex'; badge.textContent = open; }
       else { badge.style.display = 'none'; }
@@ -1209,7 +1374,8 @@
           id: item.id, comment: item.comment, priority: item.priority,
           status: item.status, device: item.device,
           position: { x: item.x.toFixed(2) + '%', y: item.y.toFixed(2) + '%' },
-          timestamp: item.timestamp, hasScreenshot: !!item.screenshot
+          timestamp: item.timestamp, hasScreenshot: !!item.screenshot,
+          replies: item.replies || []
         }))
       };
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -1230,7 +1396,8 @@
           if (data.items && Array.isArray(data.items)) {
             feedbackItems = data.items.map((item, i) => ({
               ...item, x: parseFloat(item.position?.x) || item.x || 0,
-              y: parseFloat(item.position?.y) || item.y || 0, id: item.id || i + 1
+              y: parseFloat(item.position?.y) || item.y || 0, id: item.id || i + 1,
+              replies: item.replies || []
             }));
             nextId = Math.max(...feedbackItems.map(f => f.id), 0) + 1;
             if (data.project) document.getElementById('projectName').value = data.project;
@@ -1252,8 +1419,9 @@
       document.getElementById('statusText').textContent = msg;
     }
     function updateCount() {
-      const open = feedbackItems.filter(f => f.status === 'open').length;
-      document.getElementById('feedbackCount').textContent = `${open} open / ${feedbackItems.length} total`;
+      const currentItems = feedbackItems.filter(f => f.url === currentUrl);
+      const open = currentItems.filter(f => f.status === 'open').length;
+      document.getElementById('feedbackCount').textContent = `${open} open / ${currentItems.length} total`;
     }
     function escapeHtml(str) {
       return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -1263,7 +1431,20 @@
     }
 
     // ---- Init ----
-    renderProjects();
+    // If ?project= param, auto-load that project
+    if (projectParam && !isAdmin) {
+      const projects = getProjects();
+      const match = projects.find(p => p.project.toLowerCase() === projectParam.toLowerCase());
+      if (match) {
+        document.getElementById('urlInput').value = match.url;
+        setTimeout(() => loadUrl(), 100);
+      } else {
+        renderProjects();
+      }
+    } else {
+      renderProjects();
+    }
+
     initSyncState();
     updateCommentBadge();
 
