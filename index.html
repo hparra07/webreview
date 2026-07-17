@@ -18,9 +18,9 @@
       --success: #22c55e;
       --warning: #f59e0b;
       --pin-color: #ef4444;
+      --comment-border: #6366f1;
       --radius: 8px;
     }
-
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
@@ -32,6 +32,7 @@
       overflow: hidden;
     }
 
+    /* Top Bar */
     .topbar {
       display: flex;
       align-items: center;
@@ -66,6 +67,7 @@
     }
     .topbar input[type="url"]:focus { border-color: var(--accent); }
 
+    /* Buttons */
     .btn {
       padding: 8px 14px;
       border: none;
@@ -81,17 +83,9 @@
     }
     .btn-primary { background: var(--accent); color: white; }
     .btn-primary:hover { background: var(--accent-hover); }
-    .btn-secondary {
-      background: var(--surface-2);
-      color: var(--text);
-      border: 1px solid var(--border);
-    }
+    .btn-secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
     .btn-secondary:hover { background: var(--border); }
-    .btn-danger {
-      background: transparent;
-      color: var(--danger);
-      border: 1px solid var(--danger);
-    }
+    .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
     .btn-danger:hover { background: var(--danger); color: white; }
     .btn-icon {
       padding: 8px;
@@ -103,14 +97,14 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      position: relative;
     }
     .btn-icon:hover { background: var(--border); }
-    .btn-icon.active {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: white;
-    }
+    .btn-icon.active { background: var(--accent); border-color: var(--accent); color: white; }
+    .admin-only { display: none; }
+    body.admin-mode .admin-only { display: flex; }
 
+    /* Toolbar */
     .toolbar {
       display: flex;
       align-items: center;
@@ -120,12 +114,32 @@
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
     }
-    .toolbar .separator {
-      width: 1px;
-      height: 24px;
-      background: var(--border);
-      margin: 0 4px;
+    .toolbar .separator { width: 1px; height: 24px; background: var(--border); margin: 0 4px; }
+
+    /* Mode Toggle (Browse/Comment) */
+    .mode-toggle {
+      display: flex;
+      background: var(--bg);
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border);
     }
+    .mode-toggle button {
+      padding: 6px 14px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+    .mode-toggle button.active { background: var(--accent); color: white; }
+    .mode-toggle button[data-mode="comment"].active { background: var(--danger); }
+
+    /* Device Toggle */
     .device-toggle {
       display: flex;
       background: var(--bg);
@@ -145,19 +159,39 @@
       gap: 4px;
     }
     .device-toggle button.active { background: var(--accent); color: white; }
+
     .feedback-count {
       margin-left: auto;
       font-size: 13px;
       color: var(--text-muted);
     }
 
+    /* Tooltip */
+    [data-tooltip] { position: relative; }
+    [data-tooltip]:hover::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: -30px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      white-space: nowrap;
+      z-index: 100;
+      pointer-events: none;
+    }
+
+    /* Main */
     .main {
       flex: 1;
       display: flex;
       overflow: hidden;
       position: relative;
     }
-
     .preview-area {
       flex: 1;
       display: flex;
@@ -167,24 +201,45 @@
       position: relative;
       padding: 20px;
     }
+
+    /* Comment mode border */
     .iframe-container {
       position: relative;
       background: white;
       box-shadow: 0 4px 24px rgba(0,0,0,0.4);
       border-radius: 4px;
       overflow: hidden;
-      transition: width 0.3s ease;
+      transition: width 0.3s ease, border-color 0.3s;
       flex-shrink: 0;
+      border: 3px solid transparent;
+    }
+    .iframe-container.comment-mode {
+      border-color: var(--danger);
+      box-shadow: 0 0 0 4px rgba(239,68,68,0.2), 0 4px 24px rgba(0,0,0,0.4);
     }
     .iframe-container.desktop { width: 1280px; }
     .iframe-container.tablet { width: 768px; }
     .iframe-container.mobile { width: 375px; }
-    .iframe-container iframe {
-      width: 100%;
-      height: 100%;
-      border: none;
-      display: block;
+    .iframe-container iframe { width: 100%; height: 100%; border: none; display: block; }
+
+    /* Comment mode label */
+    .comment-mode-label {
+      display: none;
+      position: absolute;
+      top: -1px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--danger);
+      color: white;
+      padding: 2px 16px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 0 0 6px 6px;
+      z-index: 30;
+      letter-spacing: 0.5px;
     }
+    .iframe-container.comment-mode .comment-mode-label { display: block; }
+
     .pin-overlay {
       position: absolute;
       top: 0; left: 0;
@@ -194,6 +249,7 @@
     }
     .pin-overlay.disabled { pointer-events: none; cursor: default; }
 
+    /* Pins */
     .pin {
       position: absolute;
       width: 28px; height: 28px;
@@ -219,6 +275,7 @@
       box-shadow: 0 0 0 3px rgba(99,102,241,0.5), 0 2px 8px rgba(0,0,0,0.3);
     }
 
+    /* Sidebar */
     .sidebar {
       width: 360px;
       background: var(--surface);
@@ -251,16 +308,10 @@
       cursor: pointer;
       border-bottom: 2px solid transparent;
     }
-    .sidebar-tabs button.active {
-      color: var(--accent);
-      border-bottom-color: var(--accent);
-    }
-    .feedback-list {
-      flex: 1;
-      overflow-y: auto;
-      padding: 8px;
-    }
+    .sidebar-tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .feedback-list { flex: 1; overflow-y: auto; padding: 8px; }
 
+    /* Feedback Card */
     .feedback-card {
       background: var(--surface-2);
       border: 1px solid var(--border);
@@ -272,12 +323,7 @@
     }
     .feedback-card:hover { border-color: var(--accent); }
     .feedback-card.active { border-color: var(--accent); background: rgba(99,102,241,0.08); }
-    .feedback-card-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
+    .feedback-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
     .feedback-card-number {
       width: 22px; height: 22px;
       border-radius: 50%;
@@ -291,45 +337,23 @@
     }
     .feedback-card.resolved .feedback-card-number { background: var(--success); }
     .feedback-card-device {
-      font-size: 11px;
-      color: var(--text-muted);
-      background: var(--bg);
-      padding: 2px 6px;
-      border-radius: 4px;
+      font-size: 11px; color: var(--text-muted);
+      background: var(--bg); padding: 2px 6px; border-radius: 4px;
     }
-    .feedback-card-actions {
-      margin-left: auto;
-      display: flex;
-      gap: 4px;
-    }
+    .feedback-card-actions { margin-left: auto; display: flex; gap: 4px; }
     .feedback-card-actions button {
-      padding: 4px 6px;
-      border: none;
-      background: transparent;
-      color: var(--text-muted);
-      cursor: pointer;
-      border-radius: 4px;
-      font-size: 12px;
+      padding: 4px 6px; border: none; background: transparent;
+      color: var(--text-muted); cursor: pointer; border-radius: 4px; font-size: 12px;
     }
     .feedback-card-actions button:hover { background: var(--border); color: var(--text); }
-    .feedback-card-comment {
-      font-size: 13px;
-      line-height: 1.5;
-      color: var(--text);
-      margin-bottom: 8px;
-    }
-    .feedback-card-meta {
-      font-size: 11px;
-      color: var(--text-muted);
-    }
+    .feedback-card-comment { font-size: 13px; line-height: 1.5; color: var(--text); margin-bottom: 8px; }
+    .feedback-card-meta { font-size: 11px; color: var(--text-muted); }
     .feedback-card-screenshot {
-      width: 100%;
-      border-radius: 4px;
-      margin-top: 8px;
-      cursor: zoom-in;
-      border: 1px solid var(--border);
+      width: 100%; border-radius: 4px; margin-top: 8px;
+      cursor: zoom-in; border: 1px solid var(--border);
     }
 
+    /* Comment Form */
     .comment-form {
       position: absolute;
       width: 300px;
@@ -341,298 +365,189 @@
       padding: 12px;
     }
     .comment-form textarea {
-      width: 100%;
-      padding: 8px;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      color: var(--text);
-      font-size: 13px;
-      resize: vertical;
-      min-height: 70px;
-      font-family: inherit;
-      outline: none;
+      width: 100%; padding: 8px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text); font-size: 13px;
+      resize: vertical; min-height: 70px; font-family: inherit; outline: none;
     }
     .comment-form textarea:focus { border-color: var(--accent); }
-    .comment-form-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 6px;
-      margin-top: 8px;
-    }
-
-    .priority-select {
-      display: flex;
-      gap: 4px;
-      margin-top: 8px;
-      margin-bottom: 4px;
-    }
+    .comment-form-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+    .priority-select { display: flex; gap: 4px; margin-top: 8px; margin-bottom: 4px; }
     .priority-select button {
-      padding: 4px 8px;
-      border: 1px solid var(--border);
-      background: var(--bg);
-      color: var(--text-muted);
-      border-radius: 4px;
-      font-size: 11px;
-      cursor: pointer;
+      padding: 4px 8px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text-muted); border-radius: 4px; font-size: 11px; cursor: pointer;
     }
     .priority-select button.active { border-color: var(--accent); color: var(--accent); }
 
+    /* Empty & Splash */
     .empty-state {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      color: var(--text-muted);
-      text-align: center;
-      padding: 40px;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; height: 100%; color: var(--text-muted);
+      text-align: center; padding: 40px;
     }
     .empty-state svg { margin-bottom: 16px; opacity: 0.5; }
     .empty-state p { font-size: 13px; line-height: 1.6; }
 
     .splash {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      width: 100%;
-      text-align: center;
-      padding: 40px;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; height: 100%; width: 100%;
+      text-align: center; padding: 40px;
     }
     .splash h2 { font-size: 24px; margin-bottom: 8px; }
     .splash p { color: var(--text-muted); margin-bottom: 24px; font-size: 14px; }
-    .splash .recent-urls { text-align: left; width: 100%; max-width: 500px; }
-    .splash .recent-urls h4 { font-size: 12px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; letter-spacing: 0.5px; }
-    .splash .recent-url-item {
-      padding: 10px 12px;
+
+    /* Projects list on splash */
+    .projects-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+      width: 100%;
+      max-width: 700px;
+      text-align: left;
+    }
+    .projects-grid h4 {
+      grid-column: 1 / -1;
+      font-size: 12px; text-transform: uppercase; color: var(--text-muted);
+      margin-bottom: 0; letter-spacing: 0.5px;
+    }
+    .project-card {
+      padding: 14px;
       background: var(--surface-2);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      margin-bottom: 6px;
       cursor: pointer;
-      font-size: 13px;
-      color: var(--text);
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      transition: border-color 0.15s;
     }
-    .splash .recent-url-item:hover { border-color: var(--accent); }
+    .project-card:hover { border-color: var(--accent); }
+    .project-card-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+    .project-card-url { font-size: 12px; color: var(--text-muted); word-break: break-all; }
+    .project-card-meta {
+      display: flex; gap: 12px; margin-top: 8px; font-size: 11px; color: var(--text-muted);
+    }
+    .project-card-meta span { display: flex; align-items: center; gap: 4px; }
 
+    /* Modals */
     .modal-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.8);
-      z-index: 1000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: zoom-out;
+      position: fixed; inset: 0; background: rgba(0,0,0,0.8);
+      z-index: 1000; display: flex; align-items: center;
+      justify-content: center; cursor: zoom-out;
     }
-    .modal-overlay img {
-      max-width: 90vw;
-      max-height: 90vh;
-      border-radius: 8px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-    }
+    .modal-overlay img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
     .modal-overlay.hidden { display: none; }
 
+    /* Status bar */
     .statusbar {
-      padding: 6px 16px;
-      background: var(--surface);
+      padding: 6px 16px; background: var(--surface);
       border-top: 1px solid var(--border);
-      font-size: 11px;
-      color: var(--text-muted);
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-shrink: 0;
+      font-size: 11px; color: var(--text-muted);
+      display: flex; align-items: center; gap: 12px; flex-shrink: 0;
     }
-    .status-dot {
-      width: 6px; height: 6px;
-      border-radius: 50%;
-      background: var(--success);
-    }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
     .status-dot.error { background: var(--danger); }
 
     .project-input {
-      padding: 8px 12px;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      color: var(--text);
-      font-size: 13px;
-      outline: none;
-      width: 140px;
+      padding: 8px 12px; background: var(--bg); border: 1px solid var(--border);
+      border-radius: var(--radius); color: var(--text); font-size: 13px; outline: none; width: 140px;
     }
     .project-input:focus { border-color: var(--accent); }
 
     /* Sync indicator */
     .sync-indicator {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 11px;
-      padding: 4px 8px;
-      border-radius: 4px;
-      cursor: pointer;
+      display: none; align-items: center; gap: 6px;
+      font-size: 11px; padding: 4px 8px; border-radius: 4px; cursor: pointer;
     }
+    body.admin-mode .sync-indicator { display: flex; }
     .sync-indicator.connected { color: var(--success); }
     .sync-indicator.disconnected { color: var(--text-muted); }
     .sync-indicator.syncing { color: var(--warning); }
     .sync-indicator.error { color: var(--danger); }
-    .sync-dot {
-      width: 6px; height: 6px;
-      border-radius: 50%;
-      background: currentColor;
-    }
-    .sync-indicator.syncing .sync-dot {
-      animation: pulse 1s infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.3; }
-    }
+    .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .sync-indicator.syncing .sync-dot { animation: pulse 1s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
     /* Settings Modal */
     .settings-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.6);
-      z-index: 2000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+      z-index: 2000; display: flex; align-items: center; justify-content: center;
     }
     .settings-overlay.hidden { display: none; }
     .settings-panel {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      width: 560px;
-      max-height: 85vh;
-      overflow-y: auto;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      width: 560px; max-height: 85vh; overflow-y: auto;
       box-shadow: 0 16px 48px rgba(0,0,0,0.5);
     }
     .settings-panel-header {
-      padding: 20px 24px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      padding: 20px 24px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
     }
     .settings-panel-header h2 { font-size: 18px; font-weight: 600; }
     .settings-panel-body { padding: 24px; }
-    .settings-section {
-      margin-bottom: 24px;
-    }
-    .settings-section h4 {
-      font-size: 13px;
-      font-weight: 600;
-      margin-bottom: 4px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .settings-section p {
-      font-size: 12px;
-      color: var(--text-muted);
-      margin-bottom: 12px;
-      line-height: 1.5;
-    }
+    .settings-section { margin-bottom: 24px; }
+    .settings-section h4 { font-size: 13px; font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+    .settings-section p { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.5; }
     .settings-input {
-      width: 100%;
-      padding: 10px 12px;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      color: var(--text);
-      font-size: 13px;
-      font-family: monospace;
-      outline: none;
+      width: 100%; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border);
+      border-radius: var(--radius); color: var(--text); font-size: 13px; font-family: monospace; outline: none;
     }
     .settings-input:focus { border-color: var(--accent); }
-    .settings-actions {
-      display: flex;
-      gap: 8px;
-      margin-top: 12px;
-    }
-    .settings-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 3px 8px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 600;
-    }
+    .settings-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .settings-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
     .settings-badge.connected { background: rgba(34,197,94,0.15); color: var(--success); }
     .settings-badge.disconnected { background: rgba(139,143,163,0.15); color: var(--text-muted); }
-
-    /* Setup guide */
     .setup-guide {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 16px;
-      margin-top: 12px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px; margin-top: 12px;
     }
-    .setup-guide h5 {
-      font-size: 12px;
-      font-weight: 600;
-      margin-bottom: 8px;
-      color: var(--accent);
-    }
-    .setup-guide ol {
-      font-size: 12px;
-      color: var(--text-muted);
-      line-height: 1.8;
-      padding-left: 18px;
-    }
-    .setup-guide ol li { margin-bottom: 4px; }
-    .setup-guide code {
-      background: var(--surface-2);
-      padding: 1px 4px;
-      border-radius: 3px;
-      font-size: 11px;
-      color: var(--text);
-    }
+    .setup-guide h5 { font-size: 12px; font-weight: 600; margin-bottom: 8px; color: var(--accent); }
+    .setup-guide ol { font-size: 12px; color: var(--text-muted); line-height: 1.8; padding-left: 18px; }
+    .setup-guide code { background: var(--surface-2); padding: 1px 4px; border-radius: 3px; font-size: 11px; color: var(--text); }
     .setup-guide .code-block {
-      background: var(--surface-2);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 12px;
-      margin: 8px 0;
-      font-family: monospace;
-      font-size: 11px;
-      line-height: 1.6;
-      color: var(--text);
-      overflow-x: auto;
-      white-space: pre;
-      position: relative;
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px;
+      padding: 12px; margin: 8px 0; font-family: monospace; font-size: 11px;
+      line-height: 1.6; color: var(--text); overflow-x: auto; white-space: pre; position: relative;
     }
     .copy-btn {
-      position: absolute;
-      top: 6px;
-      right: 6px;
-      padding: 4px 8px;
-      background: var(--accent);
-      border: none;
-      border-radius: 4px;
-      color: white;
-      font-size: 10px;
-      cursor: pointer;
+      position: absolute; top: 6px; right: 6px; padding: 4px 8px;
+      background: var(--accent); border: none; border-radius: 4px;
+      color: white; font-size: 10px; cursor: pointer;
     }
-    .copy-btn:hover { background: var(--accent-hover); }
-
     .settings-panel-footer {
-      padding: 16px 24px;
-      border-top: 1px solid var(--border);
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
+      padding: 16px 24px; border-top: 1px solid var(--border);
+      display: flex; justify-content: flex-end; gap: 8px;
     }
+
+    /* Comment count badge on button */
+    .comment-badge {
+      position: absolute;
+      top: -4px; right: -4px;
+      background: var(--danger);
+      color: white;
+      font-size: 9px;
+      font-weight: 700;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      border: 1.5px solid var(--surface);
+    }
+
+    /* Image review */
+    #imageContainer { position: relative; }
+    #imageContainer .comment-mode-label {
+      display: none;
+      position: absolute;
+      top: -1px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--danger);
+      color: white;
+      padding: 2px 16px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 0 0 6px 6px;
+      z-index: 30;
+    }
+    #imageContainer.comment-mode { border: 3px solid var(--danger); border-radius: 4px; box-shadow: 0 0 0 4px rgba(239,68,68,0.2); }
+    #imageContainer.comment-mode .comment-mode-label { display: block; }
   </style>
 </head>
 <body>
@@ -640,9 +555,9 @@
   <!-- Top Bar -->
   <div class="topbar">
     <div class="logo" onclick="showSplash()">WebReview</div>
-    <input type="text" class="project-input" id="projectName" placeholder="Project name..." value="">
+    <input type="text" class="project-input" id="projectName" placeholder="Project name...">
     <div class="url-input-wrap">
-      <input type="url" id="urlInput" placeholder="Enter URL to review (e.g. https://example.com)" />
+      <input type="url" id="urlInput" placeholder="Enter URL to review (e.g. https://example.com)" onkeydown="if(event.key==='Enter')loadUrl()" />
       <button class="btn btn-primary" onclick="loadUrl()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
         Load
@@ -652,49 +567,64 @@
       <div class="sync-dot"></div>
       <span id="syncLabel">Not connected</span>
     </div>
-    <button class="btn btn-secondary" onclick="exportFeedback()">
+    <button class="btn btn-secondary admin-only" onclick="exportFeedback()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
       Export
     </button>
-    <button class="btn btn-secondary" onclick="importFeedback()">
+    <button class="btn btn-secondary admin-only" onclick="importFeedback()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
       Import
     </button>
-    <button class="btn-icon" onclick="openSettings()" title="Settings">
+    <button class="btn-icon admin-only" onclick="openSettings()" data-tooltip="Admin Settings">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
     </button>
   </div>
 
   <!-- Toolbar -->
   <div class="toolbar" id="toolbar" style="display:none;">
-    <button class="btn-icon active" id="pinModeBtn" onclick="togglePinMode()" title="Pin mode">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="10" r="3"/><path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 10-16 0c0 3 2.7 7 8 11.7z"/></svg>
-    </button>
+    <!-- Browse / Comment toggle -->
+    <div class="mode-toggle">
+      <button class="active" data-mode="browse" onclick="setMode('browse')" data-tooltip="Navigate the page freely">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+        Browse
+      </button>
+      <button data-mode="comment" onclick="setMode('comment')" data-tooltip="Click anywhere to leave feedback">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        Comment
+      </button>
+    </div>
+
     <div class="separator"></div>
+
+    <!-- Device toggle -->
     <div class="device-toggle">
-      <button class="active" data-device="desktop" onclick="setDevice('desktop')">
+      <button class="active" data-device="desktop" onclick="setDevice('desktop')" data-tooltip="Desktop 1280px">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
         Desktop
       </button>
-      <button data-device="tablet" onclick="setDevice('tablet')">
+      <button data-device="tablet" onclick="setDevice('tablet')" data-tooltip="Tablet 768px">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M12 18h.01"/></svg>
         Tablet
       </button>
-      <button data-device="mobile" onclick="setDevice('mobile')">
+      <button data-device="mobile" onclick="setDevice('mobile')" data-tooltip="Mobile 375px">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
         Mobile
       </button>
     </div>
+
     <div class="separator"></div>
-    <button class="btn-icon" onclick="captureScreenshot()" title="Capture screenshot">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
-    </button>
-    <button class="btn-icon" onclick="syncToSheets()" title="Sync to Google Sheets" id="syncBtn">
+
+    <!-- Sync button (admin only) -->
+    <button class="btn-icon admin-only" onclick="syncToSheets()" data-tooltip="Sync all to Google Sheets">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
     </button>
-    <button class="btn-icon" onclick="toggleSidebar()" title="Toggle sidebar">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg>
+
+    <!-- Comments toggle button -->
+    <button class="btn-icon" id="commentsToggleBtn" onclick="toggleSidebar()" data-tooltip="Show/hide comments">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      <span class="comment-badge" id="commentBadge" style="display:none;">0</span>
     </button>
+
     <div class="feedback-count" id="feedbackCount">0 comments</div>
   </div>
 
@@ -705,8 +635,8 @@
       <div class="splash" id="splash">
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5"><circle cx="12" cy="10" r="3"/><path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 10-16 0c0 3 2.7 7 8 11.7z"/></svg>
         <h2>WebReview</h2>
-        <p>Enter a URL above to start reviewing. Click anywhere on the page to leave feedback.</p>
-        <div class="recent-urls" id="recentUrls"></div>
+        <p>Enter a URL above to start reviewing, or select a project below.</p>
+        <div class="projects-grid" id="projectsGrid"></div>
         <div style="margin-top:24px;">
           <p style="font-size:12px;">Or drag &amp; drop a screenshot to review a static image</p>
           <input type="file" id="imageUpload" accept="image/*" style="margin-top:8px;font-size:12px;color:var(--text-muted);" onchange="loadImage(event)">
@@ -715,24 +645,31 @@
 
       <!-- Iframe container -->
       <div class="iframe-container desktop" id="iframeContainer" style="display:none;">
+        <div class="comment-mode-label">COMMENT MODE — Click to add feedback</div>
         <iframe id="previewFrame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
-        <div class="pin-overlay" id="pinOverlay" onclick="handleOverlayClick(event)"></div>
+        <div class="pin-overlay disabled" id="pinOverlay" onclick="handleOverlayClick(event)"></div>
       </div>
 
       <!-- Image review container -->
-      <div id="imageContainer" style="display:none; position:relative;">
+      <div id="imageContainer" style="display:none;">
+        <div class="comment-mode-label">COMMENT MODE — Click to add feedback</div>
         <img id="reviewImage" style="max-width:100%; display:block; border-radius:4px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);">
-        <div class="pin-overlay" id="imagePinOverlay" onclick="handleOverlayClick(event)"></div>
+        <div class="pin-overlay disabled" id="imagePinOverlay" onclick="handleOverlayClick(event)"></div>
       </div>
     </div>
 
-    <!-- Sidebar -->
-    <div class="sidebar" id="sidebar">
+    <!-- Sidebar (collapsed by default) -->
+    <div class="sidebar collapsed" id="sidebar">
       <div class="sidebar-header">
         <h3>Feedback</h3>
-        <button class="btn-icon" onclick="clearAllFeedback()" title="Clear all" style="padding:4px;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-        </button>
+        <div style="display:flex;gap:4px;">
+          <button class="btn-icon admin-only" onclick="clearAllFeedback()" title="Clear all" style="padding:4px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+          </button>
+          <button class="btn-icon" onclick="toggleSidebar()" style="padding:4px;" title="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
       </div>
       <div class="sidebar-tabs">
         <button class="active" data-filter="all" onclick="setFilter('all')">All</button>
@@ -742,7 +679,7 @@
       <div class="feedback-list" id="feedbackList">
         <div class="empty-state">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-          <p>No feedback yet.<br>Click on the preview to add comments.</p>
+          <p>No feedback yet.<br>Switch to Comment mode and click on the page.</p>
         </div>
       </div>
     </div>
@@ -760,18 +697,16 @@
     <img id="modalImage" src="" alt="Screenshot">
   </div>
 
-  <!-- Settings Modal -->
+  <!-- Settings Modal (admin only) -->
   <div class="settings-overlay hidden" id="settingsOverlay" onclick="if(event.target===this)closeSettings()">
     <div class="settings-panel">
       <div class="settings-panel-header">
-        <h2>Settings</h2>
+        <h2>Admin Settings</h2>
         <button class="btn-icon" onclick="closeSettings()" style="padding:4px;">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
       </div>
       <div class="settings-panel-body">
-
-        <!-- Google Sheets Integration -->
         <div class="settings-section">
           <h4>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
@@ -779,166 +714,15 @@
             <span class="settings-badge disconnected" id="sheetsBadge">Disconnected</span>
           </h4>
           <p>Sync feedback automatically to a Google Sheet. Each comment becomes a row with all metadata.</p>
-
           <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Apps Script Web App URL</label>
           <input type="text" class="settings-input" id="sheetsUrl" placeholder="https://script.google.com/macros/s/.../exec" />
-
           <div class="settings-actions">
             <button class="btn btn-primary" onclick="testSheetsConnection()">Test Connection</button>
             <button class="btn btn-secondary" onclick="saveSheetsConfig()">Save</button>
             <button class="btn btn-danger" onclick="disconnectSheets()">Disconnect</button>
           </div>
-
           <div id="sheetsTestResult" style="margin-top:8px;font-size:12px;"></div>
-
-          <!-- Setup Guide -->
-          <div class="setup-guide">
-            <h5>Setup Guide (5 minutes)</h5>
-            <ol>
-              <li>Go to <strong>Google Sheets</strong> and create a new spreadsheet</li>
-              <li>Name it something like <code>WebReview Feedback</code></li>
-              <li>Go to <strong>Extensions > Apps Script</strong></li>
-              <li>Delete everything and paste the code below</li>
-              <li>Click <strong>Deploy > New deployment</strong></li>
-              <li>Select type: <strong>Web app</strong></li>
-              <li>Set "Who has access" to: <strong>Anyone</strong></li>
-              <li>Click <strong>Deploy</strong> and copy the URL</li>
-              <li>Paste the URL above and click <strong>Test Connection</strong></li>
-            </ol>
-
-            <div class="code-block" id="appsScriptCode">
-<button class="copy-btn" onclick="copyAppsScript()">Copy</button>
-function doGet(e) {
-  return handleRequest(e);
-}
-
-function doPost(e) {
-  return handleRequest(e);
-}
-
-function handleRequest(e) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var action = e.parameter.action;
-
-  // CORS headers
-  var output;
-
-  if (action === 'ping') {
-    output = ContentService.createTextOutput(
-      JSON.stringify({ status: 'ok', sheet: sheet.getName() })
-    ).setMimeType(ContentService.MimeType.JSON);
-    return output;
-  }
-
-  if (action === 'setup') {
-    var headers = sheet.getRange(1, 1, 1, 10).getValues()[0];
-    if (!headers[0]) {
-      sheet.getRange(1, 1, 1, 10).setValues([[
-        'ID', 'Project', 'URL', 'Comment',
-        'Priority', 'Status', 'Device',
-        'Position', 'Timestamp', 'Updated'
-      ]]);
-      sheet.getRange(1, 1, 1, 10)
-        .setFontWeight('bold')
-        .setBackground('#4285f4')
-        .setFontColor('white');
-      sheet.setFrozenRows(1);
-    }
-    output = ContentService.createTextOutput(
-      JSON.stringify({ status: 'ok', message: 'Headers set' })
-    ).setMimeType(ContentService.MimeType.JSON);
-    return output;
-  }
-
-  if (action === 'add') {
-    var data = JSON.parse(e.parameter.data);
-    sheet.appendRow([
-      data.id,
-      data.project || '',
-      data.url || '',
-      data.comment || '',
-      data.priority || 'normal',
-      data.status || 'open',
-      data.device || 'desktop',
-      data.x + '%, ' + data.y + '%',
-      data.timestamp || new Date().toISOString(),
-      new Date().toISOString()
-    ]);
-    output = ContentService.createTextOutput(
-      JSON.stringify({ status: 'ok', row: sheet.getLastRow() })
-    ).setMimeType(ContentService.MimeType.JSON);
-    return output;
-  }
-
-  if (action === 'update') {
-    var data = JSON.parse(e.parameter.data);
-    var rows = sheet.getDataRange().getValues();
-    for (var i = 1; i &lt; rows.length; i++) {
-      if (String(rows[i][0]) === String(data.id)) {
-        if (data.status) sheet.getRange(i+1, 6).setValue(data.status);
-        if (data.comment) sheet.getRange(i+1, 4).setValue(data.comment);
-        sheet.getRange(i+1, 10).setValue(new Date().toISOString());
-        break;
-      }
-    }
-    output = ContentService.createTextOutput(
-      JSON.stringify({ status: 'ok' })
-    ).setMimeType(ContentService.MimeType.JSON);
-    return output;
-  }
-
-  if (action === 'sync') {
-    var data = JSON.parse(e.parameter.data);
-    // Clear existing data (keep headers)
-    var lastRow = sheet.getLastRow();
-    if (lastRow > 1) {
-      sheet.getRange(2, 1, lastRow - 1, 10).clear();
-    }
-    // Write all items
-    data.items.forEach(function(item) {
-      sheet.appendRow([
-        item.id,
-        data.project || '',
-        item.url || '',
-        item.comment || '',
-        item.priority || 'normal',
-        item.status || 'open',
-        item.device || 'desktop',
-        (item.x || 0) + '%, ' + (item.y || 0) + '%',
-        item.timestamp || new Date().toISOString(),
-        new Date().toISOString()
-      ]);
-    });
-    output = ContentService.createTextOutput(
-      JSON.stringify({ status:'ok', synced: data.items.length })
-    ).setMimeType(ContentService.MimeType.JSON);
-    return output;
-  }
-
-  if (action === 'delete') {
-    var id = e.parameter.id;
-    var rows = sheet.getDataRange().getValues();
-    for (var i = rows.length - 1; i >= 1; i--) {
-      if (String(rows[i][0]) === String(id)) {
-        sheet.deleteRow(i + 1);
-        break;
-      }
-    }
-    output = ContentService.createTextOutput(
-      JSON.stringify({ status: 'ok' })
-    ).setMimeType(ContentService.MimeType.JSON);
-    return output;
-  }
-
-  output = ContentService.createTextOutput(
-    JSON.stringify({ status: 'error', message: 'Unknown action' })
-  ).setMimeType(ContentService.MimeType.JSON);
-  return output;
-}</div>
-          </div>
         </div>
-
-        <!-- Auto-sync setting -->
         <div class="settings-section">
           <h4>Auto-sync</h4>
           <p>When enabled, every new comment and status change syncs to Google Sheets automatically.</p>
@@ -947,7 +731,6 @@ function handleRequest(e) {
             <span style="font-size:13px;">Auto-sync on changes</span>
           </label>
         </div>
-
       </div>
       <div class="settings-panel-footer">
         <button class="btn btn-secondary" onclick="closeSettings()">Close</button>
@@ -955,34 +738,115 @@ function handleRequest(e) {
     </div>
   </div>
 
-  <!-- Hidden file input for import -->
   <input type="file" id="importInput" accept=".json" style="display:none" onchange="handleImport(event)">
 
   <script>
-    // State
+    // ---- State ----
     let feedbackItems = [];
     let currentDevice = 'desktop';
     let currentUrl = '';
-    let pinMode = true;
+    let currentMode = 'browse'; // 'browse' or 'comment'
     let activeFilter = 'all';
     let activeFeedbackId = null;
     let pendingCommentForm = null;
     let isImageMode = false;
     let nextId = 1;
+    const isAdmin = new URLSearchParams(window.location.search).has('admin');
+
+    // Admin mode
+    if (isAdmin) document.body.classList.add('admin-mode');
 
     // Google Sheets config
     const SHEETS_CONFIG_KEY = 'webreview_sheets_config';
     let sheetsConfig = JSON.parse(localStorage.getItem(SHEETS_CONFIG_KEY) || 'null') || {
-      url: '',
-      connected: false,
-      autoSync: true
+      url: '', connected: false, autoSync: true
     };
 
-    // LocalStorage
     const STORAGE_KEY = 'webreview_data';
-    const RECENT_KEY = 'webreview_recent';
+    const PROJECTS_KEY = 'webreview_projects';
 
-    // Init sync indicator
+    // ---- Mode Toggle ----
+    function setMode(mode) {
+      currentMode = mode;
+      document.querySelectorAll('.mode-toggle button').forEach(b => {
+        b.classList.toggle('active', b.dataset.mode === mode);
+      });
+
+      const overlay = document.getElementById('pinOverlay');
+      const imgOverlay = document.getElementById('imagePinOverlay');
+      const container = document.getElementById('iframeContainer');
+      const imgContainer = document.getElementById('imageContainer');
+
+      if (mode === 'comment') {
+        overlay.classList.remove('disabled');
+        if (imgOverlay) imgOverlay.classList.remove('disabled');
+        container.classList.add('comment-mode');
+        imgContainer.classList.add('comment-mode');
+        setStatus('ok', 'Comment mode — click anywhere to add feedback');
+      } else {
+        overlay.classList.add('disabled');
+        if (imgOverlay) imgOverlay.classList.add('disabled');
+        container.classList.remove('comment-mode');
+        imgContainer.classList.remove('comment-mode');
+        cancelComment();
+        setStatus('ok', 'Browse mode — navigate freely');
+      }
+    }
+
+    // ---- Projects ----
+    function getProjects() {
+      const projects = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith(STORAGE_KEY + '_') && !key.endsWith('_draft')) {
+          try {
+            const data = JSON.parse(localStorage.getItem(key));
+            if (data && data.url) {
+              projects.push({
+                url: data.url,
+                project: data.project || '',
+                count: (data.items || []).length,
+                openCount: (data.items || []).filter(i => i.status === 'open').length,
+                lastModified: (data.items || []).reduce((latest, i) =>
+                  i.timestamp > latest ? i.timestamp : latest, '')
+              });
+            }
+          } catch(e) {}
+        }
+      }
+      return projects.sort((a, b) => (b.lastModified || '').localeCompare(a.lastModified || ''));
+    }
+
+    function renderProjects() {
+      const projects = getProjects();
+      const grid = document.getElementById('projectsGrid');
+      if (projects.length === 0) {
+        grid.innerHTML = '';
+        return;
+      }
+      grid.innerHTML = '<h4>Projects</h4>' + projects.map(p => `
+        <div class="project-card" onclick="document.getElementById('urlInput').value='${p.url}';loadUrl();">
+          <div class="project-card-title">${p.project || extractDomain(p.url)}</div>
+          <div class="project-card-url">${p.url}</div>
+          <div class="project-card-meta">
+            <span>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+              ${p.count} comments
+            </span>
+            <span style="color:${p.openCount > 0 ? 'var(--warning)' : 'var(--success)'}">
+              ${p.openCount} open
+            </span>
+            ${p.lastModified ? `<span>${formatDate(p.lastModified)}</span>` : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function extractDomain(url) {
+      try { return new URL(url).hostname; } catch(e) { return url; }
+    }
+
+    // ---- Sync ----
     function updateSyncIndicator(state, label) {
       const el = document.getElementById('syncIndicator');
       const labelEl = document.getElementById('syncLabel');
@@ -1004,52 +868,33 @@ function handleRequest(e) {
       document.getElementById('autoSyncToggle').checked = sheetsConfig.autoSync !== false;
     }
 
-    // ---- Google Sheets API ----
-
     async function sheetsRequest(action, data) {
       if (!sheetsConfig.url) throw new Error('No Sheets URL configured');
-
       const params = new URLSearchParams();
       params.append('action', action);
       if (data) params.append('data', JSON.stringify(data));
-
-      const resp = await fetch(sheetsConfig.url + '?' + params.toString(), {
-        method: 'GET',
-        redirect: 'follow'
-      });
+      const resp = await fetch(sheetsConfig.url + '?' + params.toString(), { method: 'GET', redirect: 'follow' });
       return resp.json();
     }
 
     async function testSheetsConnection() {
       const url = document.getElementById('sheetsUrl').value.trim();
       const resultEl = document.getElementById('sheetsTestResult');
-
-      if (!url) {
-        resultEl.innerHTML = '<span style="color:var(--danger)">Please enter the Apps Script URL</span>';
-        return;
-      }
-
-      resultEl.innerHTML = '<span style="color:var(--warning)">Testing connection...</span>';
-
+      if (!url) { resultEl.innerHTML = '<span style="color:var(--danger)">Please enter the Apps Script URL</span>'; return; }
+      resultEl.innerHTML = '<span style="color:var(--warning)">Testing...</span>';
       try {
-        const tempConfig = { ...sheetsConfig, url };
-        const oldUrl = sheetsConfig.url;
         sheetsConfig.url = url;
-
         const result = await sheetsRequest('ping');
-
         if (result.status === 'ok') {
-          // Setup headers
           await sheetsRequest('setup');
           resultEl.innerHTML = '<span style="color:var(--success)">Connected! Sheet: "' + (result.sheet || 'Sheet1') + '"</span>';
           sheetsConfig.connected = true;
           saveSheetsConfig();
         } else {
-          sheetsConfig.url = oldUrl;
-          resultEl.innerHTML = '<span style="color:var(--danger)">Error: ' + (result.message || 'Unknown error') + '</span>';
+          resultEl.innerHTML = '<span style="color:var(--danger)">Error: ' + (result.message || 'Unknown') + '</span>';
         }
       } catch (e) {
-        resultEl.innerHTML = '<span style="color:var(--danger)">Failed: ' + e.message + '. Make sure the script is deployed as "Anyone" access.</span>';
+        resultEl.innerHTML = '<span style="color:var(--danger)">Failed: ' + e.message + '</span>';
       }
     }
 
@@ -1058,15 +903,12 @@ function handleRequest(e) {
       localStorage.setItem(SHEETS_CONFIG_KEY, JSON.stringify(sheetsConfig));
       initSyncState();
     }
-
     function saveAutoSync() {
       sheetsConfig.autoSync = document.getElementById('autoSyncToggle').checked;
       localStorage.setItem(SHEETS_CONFIG_KEY, JSON.stringify(sheetsConfig));
     }
-
     function disconnectSheets() {
-      sheetsConfig.url = '';
-      sheetsConfig.connected = false;
+      sheetsConfig = { url: '', connected: false, autoSync: true };
       document.getElementById('sheetsUrl').value = '';
       document.getElementById('sheetsTestResult').innerHTML = '';
       localStorage.setItem(SHEETS_CONFIG_KEY, JSON.stringify(sheetsConfig));
@@ -1075,33 +917,20 @@ function handleRequest(e) {
 
     async function syncItemToSheets(item, action) {
       if (!sheetsConfig.connected || !sheetsConfig.autoSync) return;
-
       updateSyncIndicator('syncing', 'Syncing...');
       try {
-        const data = {
-          ...item,
-          project: document.getElementById('projectName').value
-        };
-        await sheetsRequest(action, data);
+        await sheetsRequest(action, { ...item, project: document.getElementById('projectName').value });
         updateSyncIndicator('connected', 'Synced');
       } catch (e) {
         updateSyncIndicator('error', 'Sync failed');
-        console.error('Sheets sync error:', e);
       }
     }
 
     async function syncToSheets() {
-      if (!sheetsConfig.connected) {
-        openSettings();
-        return;
-      }
-
+      if (!sheetsConfig.connected) { openSettings(); return; }
       updateSyncIndicator('syncing', 'Full sync...');
       try {
-        await sheetsRequest('sync', {
-          project: document.getElementById('projectName').value,
-          items: feedbackItems
-        });
+        await sheetsRequest('sync', { project: document.getElementById('projectName').value, items: feedbackItems });
         updateSyncIndicator('connected', 'Synced (' + feedbackItems.length + ')');
         setStatus('ok', 'All feedback synced to Google Sheets');
       } catch (e) {
@@ -1110,36 +939,12 @@ function handleRequest(e) {
       }
     }
 
-    // Settings modal
-    function openSettings() {
-      document.getElementById('settingsOverlay').classList.remove('hidden');
-      initSyncState();
-    }
-    function closeSettings() {
-      document.getElementById('settingsOverlay').classList.add('hidden');
-    }
+    function openSettings() { document.getElementById('settingsOverlay').classList.remove('hidden'); initSyncState(); }
+    function closeSettings() { document.getElementById('settingsOverlay').classList.add('hidden'); }
 
-    function copyAppsScript() {
-      const code = document.getElementById('appsScriptCode').textContent
-        .replace('Copy', '')
-        .replace(/</g, '<')
-        .trim();
-      navigator.clipboard.writeText(code).then(() => {
-        const btn = document.querySelector('.copy-btn');
-        btn.textContent = 'Copied!';
-        setTimeout(() => btn.textContent = 'Copy', 2000);
-      });
-    }
-
-    // ---- Core App ----
-
+    // ---- Core ----
     function saveState() {
-      const data = {
-        project: document.getElementById('projectName').value,
-        url: currentUrl,
-        items: feedbackItems,
-        nextId
-      };
+      const data = { project: document.getElementById('projectName').value, url: currentUrl, items: feedbackItems, nextId };
       localStorage.setItem(STORAGE_KEY + '_' + (currentUrl || 'draft'), JSON.stringify(data));
     }
 
@@ -1152,27 +957,12 @@ function handleRequest(e) {
         if (data.project) document.getElementById('projectName').value = data.project;
         renderFeedback();
         renderPins();
+      } else {
+        feedbackItems = [];
+        nextId = 1;
+        renderFeedback();
+        renderPins();
       }
-    }
-
-    function addRecentUrl(url) {
-      let recent = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
-      recent = recent.filter(u => u !== url);
-      recent.unshift(url);
-      recent = recent.slice(0, 5);
-      localStorage.setItem(RECENT_KEY, JSON.stringify(recent));
-    }
-
-    function showRecentUrls() {
-      const recent = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
-      const container = document.getElementById('recentUrls');
-      if (recent.length === 0) { container.innerHTML = ''; return; }
-      container.innerHTML = '<h4>Recent</h4>' + recent.map(u =>
-        `<div class="recent-url-item" onclick="document.getElementById('urlInput').value='${u}';loadUrl();">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-          ${u}
-        </div>`
-      ).join('');
     }
 
     function showSplash() {
@@ -1180,7 +970,7 @@ function handleRequest(e) {
       document.getElementById('iframeContainer').style.display = 'none';
       document.getElementById('imageContainer').style.display = 'none';
       document.getElementById('toolbar').style.display = 'none';
-      showRecentUrls();
+      renderProjects();
     }
 
     function loadUrl() {
@@ -1199,12 +989,12 @@ function handleRequest(e) {
       const iframe = document.getElementById('previewFrame');
       iframe.src = url;
       updateIframeSize();
+      setMode('browse');
 
       setStatus('loading', 'Loading ' + url + '...');
-      iframe.onload = () => setStatus('ok', 'Loaded — click to add feedback');
+      iframe.onload = () => setStatus('ok', 'Loaded — switch to Comment mode to add feedback');
       iframe.onerror = () => setStatus('error', 'Could not load page — CORS may be blocking iframe');
 
-      addRecentUrl(url);
       loadState(url);
     }
 
@@ -1220,7 +1010,8 @@ function handleRequest(e) {
         document.getElementById('imageContainer').style.display = 'block';
         document.getElementById('toolbar').style.display = 'flex';
         document.getElementById('reviewImage').src = e.target.result;
-        setStatus('ok', 'Image loaded — click to add feedback');
+        setMode('browse');
+        setStatus('ok', 'Image loaded — switch to Comment mode to add feedback');
         loadState(currentUrl);
       };
       reader.readAsDataURL(file);
@@ -1228,35 +1019,21 @@ function handleRequest(e) {
 
     function setDevice(device) {
       currentDevice = device;
-      document.querySelectorAll('.device-toggle button').forEach(b => {
-        b.classList.toggle('active', b.dataset.device === device);
-      });
+      document.querySelectorAll('.device-toggle button').forEach(b => b.classList.toggle('active', b.dataset.device === device));
       updateIframeSize();
       document.getElementById('deviceInfo').textContent = device.charAt(0).toUpperCase() + device.slice(1);
     }
 
     function updateIframeSize() {
       const container = document.getElementById('iframeContainer');
-      container.className = 'iframe-container ' + currentDevice;
+      container.className = 'iframe-container ' + currentDevice + (currentMode === 'comment' ? ' comment-mode' : '');
       const heights = { desktop: '900px', tablet: '1024px', mobile: '812px' };
       container.style.height = heights[currentDevice];
     }
 
-    function togglePinMode() {
-      pinMode = !pinMode;
-      document.getElementById('pinModeBtn').classList.toggle('active', pinMode);
-      document.getElementById('pinOverlay').classList.toggle('disabled', !pinMode);
-      if (document.getElementById('imagePinOverlay'))
-        document.getElementById('imagePinOverlay').classList.toggle('disabled', !pinMode);
-    }
-
     function handleOverlayClick(event) {
-      if (!pinMode) return;
-      if (pendingCommentForm) {
-        pendingCommentForm.remove();
-        pendingCommentForm = null;
-        return;
-      }
+      if (currentMode !== 'comment') return;
+      if (pendingCommentForm) { pendingCommentForm.remove(); pendingCommentForm = null; return; }
       const overlay = event.currentTarget;
       const rect = overlay.getBoundingClientRect();
       const xPercent = ((event.clientX - rect.left) / rect.width) * 100;
@@ -1296,7 +1073,6 @@ function handleRequest(e) {
       btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
     }
-
     function cancelComment() {
       if (pendingCommentForm) { pendingCommentForm.remove(); pendingCommentForm = null; }
     }
@@ -1306,28 +1082,18 @@ function handleRequest(e) {
       const comment = textarea.value.trim();
       if (!comment) { textarea.focus(); return; }
       const priority = pendingCommentForm.querySelector('.priority-select .active').dataset.priority;
-
       const item = {
-        id: nextId++,
-        x: xPct,
-        y: yPct,
-        comment,
-        priority,
-        device: currentDevice,
-        status: 'open',
-        timestamp: new Date().toISOString(),
-        url: currentUrl,
-        screenshot: null
+        id: nextId++, x: xPct, y: yPct, comment, priority,
+        device: currentDevice, status: 'open',
+        timestamp: new Date().toISOString(), url: currentUrl, screenshot: null
       };
-
       feedbackItems.push(item);
       cancelComment();
       renderFeedback();
       renderPins();
       saveState();
+      updateCommentBadge();
       setStatus('ok', `Comment #${item.id} added`);
-
-      // Auto-sync to Sheets
       syncItemToSheets(item, 'add');
     }
 
@@ -1361,15 +1127,13 @@ function handleRequest(e) {
         if (activeFilter === 'resolved') return item.status === 'resolved';
         return true;
       });
-
       if (filtered.length === 0) {
         list.innerHTML = `<div class="empty-state">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-          <p>No feedback yet.<br>Click on the preview to add comments.</p>
+          <p>No feedback yet.<br>Switch to Comment mode and click on the page.</p>
         </div>`;
         return;
       }
-
       list.innerHTML = filtered.map(item => `
         <div class="feedback-card ${item.status === 'resolved' ? 'resolved' : ''} ${activeFeedbackId === item.id ? 'active' : ''}" onclick="selectFeedback(${item.id})">
           <div class="feedback-card-header">
@@ -1377,10 +1141,8 @@ function handleRequest(e) {
             <span class="feedback-card-device">${item.device}</span>
             ${item.priority !== 'normal' ? `<span style="font-size:11px;color:${item.priority === 'critical' ? 'var(--danger)' : 'var(--warning)'};">${item.priority}</span>` : ''}
             <div class="feedback-card-actions">
-              <button onclick="event.stopPropagation();toggleResolved(${item.id})" title="${item.status === 'resolved' ? 'Reopen' : 'Resolve'}">
-                ${item.status === 'resolved' ? '&#8617;' : '&#10003;'}
-              </button>
-              <button onclick="event.stopPropagation();deleteFeedback(${item.id})" title="Delete">&#10005;</button>
+              <button onclick="event.stopPropagation();toggleResolved(${item.id})" title="${item.status === 'resolved' ? 'Reopen' : 'Resolve'}">${item.status === 'resolved' ? '&#8617;' : '&#10003;'}</button>
+              <button class="admin-only" onclick="event.stopPropagation();deleteFeedback(${item.id})" title="Delete">&#10005;</button>
             </div>
           </div>
           <div class="feedback-card-comment">${escapeHtml(item.comment)}</div>
@@ -1401,9 +1163,7 @@ function handleRequest(e) {
       const item = feedbackItems.find(f => f.id === id);
       if (item) {
         item.status = item.status === 'resolved' ? 'open' : 'resolved';
-        renderFeedback();
-        renderPins();
-        saveState();
+        renderFeedback(); renderPins(); saveState(); updateCommentBadge();
         syncItemToSheets({ id: item.id, status: item.status }, 'update');
       }
     }
@@ -1411,12 +1171,8 @@ function handleRequest(e) {
     function deleteFeedback(id) {
       feedbackItems = feedbackItems.filter(f => f.id !== id);
       if (activeFeedbackId === id) activeFeedbackId = null;
-      renderFeedback();
-      renderPins();
-      saveState();
+      renderFeedback(); renderPins(); saveState(); updateCommentBadge();
       if (sheetsConfig.connected && sheetsConfig.autoSync) {
-        sheetsRequest('delete', null).catch(() => {});
-        // Use URL param for delete
         fetch(sheetsConfig.url + '?action=delete&id=' + id, { redirect: 'follow' }).catch(() => {});
       }
     }
@@ -1424,60 +1180,30 @@ function handleRequest(e) {
     function clearAllFeedback() {
       if (feedbackItems.length === 0) return;
       if (!confirm('Delete all feedback for this page?')) return;
-      feedbackItems = [];
-      activeFeedbackId = null;
-      nextId = 1;
-      renderFeedback();
-      renderPins();
-      saveState();
+      feedbackItems = []; activeFeedbackId = null; nextId = 1;
+      renderFeedback(); renderPins(); saveState(); updateCommentBadge();
     }
 
     function setFilter(filter) {
       activeFilter = filter;
-      document.querySelectorAll('.sidebar-tabs button').forEach(b => {
-        b.classList.toggle('active', b.dataset.filter === filter);
-      });
-      renderFeedback();
-      renderPins();
+      document.querySelectorAll('.sidebar-tabs button').forEach(b => b.classList.toggle('active', b.dataset.filter === filter));
+      renderFeedback(); renderPins();
     }
 
     function toggleSidebar() {
       document.getElementById('sidebar').classList.toggle('collapsed');
     }
 
-    function captureScreenshot() {
-      setStatus('loading', 'Capturing screenshot...');
-      try {
-        const canvas = document.createElement('canvas');
-        const container = document.getElementById('iframeContainer');
-        canvas.width = container.offsetWidth;
-        canvas.height = container.offsetHeight;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.font = '16px sans-serif';
-        ctx.fillStyle = '#333';
-        ctx.textAlign = 'center';
-        ctx.fillText('Screenshot captured — ' + currentUrl, canvas.width/2, canvas.height/2 - 10);
-        ctx.font = '12px sans-serif';
-        ctx.fillStyle = '#888';
-        ctx.fillText(currentDevice + ' · ' + new Date().toLocaleString(), canvas.width/2, canvas.height/2 + 15);
-        const dataUrl = canvas.toDataURL('image/png');
-        showScreenshot(dataUrl);
-        setStatus('ok', 'Screenshot captured');
-        if (activeFeedbackId) {
-          const item = feedbackItems.find(f => f.id === activeFeedbackId);
-          if (item) { item.screenshot = dataUrl; renderFeedback(); saveState(); }
-        }
-      } catch(e) {
-        setStatus('error', 'Screenshot failed — CORS restriction');
-      }
+    function updateCommentBadge() {
+      const open = feedbackItems.filter(f => f.status === 'open').length;
+      const badge = document.getElementById('commentBadge');
+      if (open > 0) { badge.style.display = 'flex'; badge.textContent = open; }
+      else { badge.style.display = 'none'; }
     }
 
     function exportFeedback() {
       const data = {
-        project: document.getElementById('projectName').value,
-        url: currentUrl,
+        project: document.getElementById('projectName').value, url: currentUrl,
         exportDate: new Date().toISOString(),
         items: feedbackItems.map(item => ({
           id: item.id, comment: item.comment, priority: item.priority,
@@ -1491,11 +1217,9 @@ function handleRequest(e) {
       a.href = URL.createObjectURL(blob);
       a.download = `webreview-${document.getElementById('projectName').value || 'feedback'}-${new Date().toISOString().slice(0,10)}.json`;
       a.click();
-      setStatus('ok', 'Feedback exported');
     }
 
     function importFeedback() { document.getElementById('importInput').click(); }
-
     function handleImport(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -1505,18 +1229,13 @@ function handleRequest(e) {
           const data = JSON.parse(e.target.result);
           if (data.items && Array.isArray(data.items)) {
             feedbackItems = data.items.map((item, i) => ({
-              ...item,
-              x: parseFloat(item.position?.x) || item.x || 0,
-              y: parseFloat(item.position?.y) || item.y || 0,
-              id: item.id || i + 1
+              ...item, x: parseFloat(item.position?.x) || item.x || 0,
+              y: parseFloat(item.position?.y) || item.y || 0, id: item.id || i + 1
             }));
             nextId = Math.max(...feedbackItems.map(f => f.id), 0) + 1;
             if (data.project) document.getElementById('projectName').value = data.project;
             if (data.url) { document.getElementById('urlInput').value = data.url; currentUrl = data.url; }
-            renderFeedback();
-            renderPins();
-            saveState();
-            setStatus('ok', `Imported ${feedbackItems.length} feedback items`);
+            renderFeedback(); renderPins(); saveState(); updateCommentBadge();
           }
         } catch(err) { setStatus('error', 'Invalid JSON file'); }
       };
@@ -1532,40 +1251,30 @@ function handleRequest(e) {
       document.getElementById('statusDot').className = 'status-dot' + (type === 'error' ? ' error' : '');
       document.getElementById('statusText').textContent = msg;
     }
-
     function updateCount() {
       const open = feedbackItems.filter(f => f.status === 'open').length;
-      const total = feedbackItems.length;
-      document.getElementById('feedbackCount').textContent = `${open} open / ${total} total`;
+      document.getElementById('feedbackCount').textContent = `${open} open / ${feedbackItems.length} total`;
     }
-
     function escapeHtml(str) {
       return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
-
     function formatDate(iso) {
       return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     }
 
-    // Init
-    showRecentUrls();
+    // ---- Init ----
+    renderProjects();
     initSyncState();
+    updateCommentBadge();
 
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        cancelComment();
-        document.getElementById('screenshotModal').classList.add('hidden');
-        closeSettings();
-      }
+      if (e.key === 'Escape') { cancelComment(); document.getElementById('screenshotModal').classList.add('hidden'); closeSettings(); }
     });
-
     document.addEventListener('dragover', (e) => e.preventDefault());
     document.addEventListener('drop', (e) => {
       e.preventDefault();
       const file = e.dataTransfer.files[0];
-      if (file && file.type.startsWith('image/')) {
-        loadImage({ target: { files: [file] } });
-      }
+      if (file && file.type.startsWith('image/')) loadImage({ target: { files: [file] } });
     });
   </script>
 </body>
