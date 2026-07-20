@@ -993,7 +993,23 @@
       if (!e.data || typeof e.data !== 'object') return;
       if (e.data.type === 'webreview-proxy-ready') {
         proxyReady = true;
+        // Si la página navegó dentro del iframe, actualizamos URL y pines
+        if (e.data.url) {
+          const navUrl = normalizeUrl(e.data.url);
+          if (navUrl && navUrl !== currentUrl) {
+            currentUrl = navUrl;
+            document.getElementById('urlInput').value = navUrl;
+            loadState(navUrl);
+            updateCommentBadge();
+          }
+        }
+        if (currentMode === 'comment') {
+          document.getElementById('previewFrame').contentWindow.postMessage('webreview-enable-picker', '*');
+        }
         setStatus('ok', 'Cargado con detección de elementos — cambiá a modo Comentario');
+      }
+      if (e.data.type === 'webreview-navigating') {
+        setStatus('loading', 'Navegando a ' + e.data.url + '...');
       }
       if (e.data.type === 'webreview-element-selected' && currentMode === 'comment') {
         const r = e.data.rect;
@@ -1553,17 +1569,14 @@
         });
 
         visibleItems.forEach(item => {
-          if (item.selection) {
+          // El recuadro del área solo se muestra cuando el comentario está seleccionado
+          if (item.selection && activeFeedbackId === item.id) {
             const rect = document.createElement('div');
             rect.className = 'pin-selection-rect';
             rect.style.left = item.selection.x1 + '%';
             rect.style.top = item.selection.y1 + '%';
             rect.style.width = (item.selection.x2 - item.selection.x1) + '%';
             rect.style.height = (item.selection.y2 - item.selection.y1) + '%';
-            if (activeFeedbackId === item.id) {
-              rect.style.borderColor = 'var(--danger)';
-              rect.style.background = 'rgba(239,68,68,0.1)';
-            }
             overlay.appendChild(rect);
           }
 

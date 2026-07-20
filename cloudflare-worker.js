@@ -101,7 +101,50 @@ const ELEMENT_PICKER_SCRIPT = `
     }
   });
 
-  window.parent.postMessage({ type: 'webreview-proxy-ready' }, '*');
+  // Interceptar navegación: los links deben seguir pasando por el proxy
+  var PROXY_ORIGIN = window.location.origin;
+  var TARGET_ORIGIN = document.querySelector('base') ? new URL(document.querySelector('base').href).origin : '';
+
+  function toProxyUrl(href) {
+    try {
+      var abs = new URL(href, TARGET_ORIGIN || undefined);
+      if (abs.protocol !== 'http:' && abs.protocol !== 'https:') return null;
+      return PROXY_ORIGIN + '/?url=' + encodeURIComponent(abs.href);
+    } catch (err) { return null; }
+  }
+
+  document.addEventListener('click', function(e) {
+    if (enabled) return; // en modo picker el otro handler se encarga
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a) return;
+    var href = a.getAttribute('href');
+    if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) return;
+    var proxied = toProxyUrl(a.href);
+    if (!proxied) return;
+    e.preventDefault();
+    e.stopPropagation();
+    window.parent.postMessage({ type: 'webreview-navigating', url: a.href }, '*');
+    window.location.href = proxied;
+  }, true);
+
+  // Interceptar submits de formularios GET (búsquedas, etc.)
+  document.addEventListener('submit', function(e) {
+    var form = e.target;
+    if (!form || (form.method || 'get').toLowerCase() !== 'get') return;
+    var action = form.getAttribute('action') || TARGET_ORIGIN;
+    try {
+      var abs = new URL(action, TARGET_ORIGIN || undefined);
+      var params = new URLSearchParams(new FormData(form));
+      abs.search = params.toString();
+      var proxied = toProxyUrl(abs.href);
+      if (!proxied) return;
+      e.preventDefault();
+      window.location.href = proxied;
+    } catch (err) {}
+  }, true);
+
+  var currentTargetUrl = new URLSearchParams(window.location.search).get('url') || '';
+  window.parent.postMessage({ type: 'webreview-proxy-ready', url: currentTargetUrl }, '*');
 })();
 </script>
 `;
