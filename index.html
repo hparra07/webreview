@@ -875,6 +875,22 @@
             <span style="font-size:13px;">Auto-sync on changes</span>
           </label>
         </div>
+        <div class="settings-section">
+          <h4>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            Proxy (Cloudflare Worker)
+            <span class="settings-badge disconnected" id="proxyBadge">Not configured</span>
+          </h4>
+          <p>Route sites through a proxy to enable element detection and fix blocked iframes. Deploy the Cloudflare Worker and paste the URL here.</p>
+          <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Worker URL</label>
+          <input type="text" class="settings-input" id="proxyUrl" placeholder="https://webreview-proxy.your-subdomain.workers.dev" />
+          <div class="settings-actions">
+            <button class="btn btn-primary" onclick="testProxy()">Test Proxy</button>
+            <button class="btn btn-secondary" onclick="saveProxyConfig()">Save</button>
+            <button class="btn btn-danger" onclick="disconnectProxy()">Disconnect</button>
+          </div>
+          <div id="proxyTestResult" style="margin-top:8px;font-size:12px;"></div>
+        </div>
       </div>
       <div class="settings-panel-footer">
         <button class="btn btn-secondary" onclick="closeSettings()">Close</button>
@@ -913,6 +929,100 @@
 
     const STORAGE_KEY = 'webreview_data';
 
+    // Proxy config
+    const PROXY_CONFIG_KEY = 'webreview_proxy_config';
+    let proxyConfig = JSON.parse(localStorage.getItem(PROXY_CONFIG_KEY) || 'null') || {
+      url: '', connected: false
+    };
+    let proxyReady = false;
+
+    function getProxyUrl(targetUrl) {
+      if (!proxyConfig.connected || !proxyConfig.url) return null;
+      return proxyConfig.url + '?url=' + encodeURIComponent(targetUrl);
+    }
+
+    async function testProxy() {
+      const url = document.getElementById('proxyUrl').value.trim();
+      const resultEl = document.getElementById('proxyTestResult');
+      if (!url) { resultEl.innerHTML = '<span style="color:var(--danger)">Enter the Worker URL</span>'; return; }
+      resultEl.innerHTML = '<span style="color:var(--warning)">Testing...</span>';
+      try {
+        const resp = await fetch(url);
+        const data = await resp.json();
+        if (data.service === 'webreview-proxy' || data.status === 'ok') {
+          resultEl.innerHTML = '<span style="color:var(--success)">Proxy connected!</span>';
+          proxyConfig.url = url;
+          proxyConfig.connected = true;
+          saveProxyConfig();
+        } else {
+          resultEl.innerHTML = '<span style="color:var(--danger)">Invalid response from worker</span>';
+        }
+      } catch(e) {
+        resultEl.innerHTML = '<span style="color:var(--danger)">Failed: ' + e.message + '</span>';
+      }
+    }
+
+    function saveProxyConfig() {
+      proxyConfig.url = document.getElementById('proxyUrl').value.trim();
+      localStorage.setItem(PROXY_CONFIG_KEY, JSON.stringify(proxyConfig));
+      initProxyState();
+    }
+
+    function disconnectProxy() {
+      proxyConfig = { url: '', connected: false };
+      document.getElementById('proxyUrl').value = '';
+      document.getElementById('proxyTestResult').innerHTML = '';
+      localStorage.setItem(PROXY_CONFIG_KEY, JSON.stringify(proxyConfig));
+      initProxyState();
+    }
+
+    function initProxyState() {
+      const badge = document.getElementById('proxyBadge');
+      if (proxyConfig.connected && proxyConfig.url) {
+        badge.className = 'settings-badge connected';
+        badge.textContent = 'Connected';
+      } else {
+        badge.className = 'settings-badge disconnected';
+        badge.textContent = 'Not configured';
+      }
+      document.getElementById('proxyUrl').value = proxyConfig.url || '';
+    }
+
+    // Listen for messages from proxied iframe
+    window.addEventListener('message', function(e) {
+      if (!e.data || typeof e.data !== 'object') return;
+      if (e.data.type === 'webreview-proxy-ready') {
+        proxyReady = true;
+        setStatus('ok', 'Cargado con detección de elementos — cambiá a modo Comentario');
+      }
+      if (e.data.type === 'webreview-element-selected' && currentMode === 'comment') {
+        const r = e.data.rect;
+        const overlay = document.getElementById('pinOverlay');
+        const oRect = overlay.getBoundingClientRect();
+        const iframe = document.getElementById('previewFrame');
+        const iRect = iframe.getBoundingClientRect();
+
+        const scaleX = iRect.width / e.data.viewportWidth;
+        const scaleY = iRect.height / e.data.viewportHeight;
+
+        const elLeft = r.x * scaleX;
+        const elTop = r.y * scaleY;
+        const elW = r.width * scaleX;
+        const elH = r.height * scaleY;
+
+        const xPct = ((elLeft + elW / 2) / oRect.width) * 100;
+        const yPct = ((elTop + elH / 2) / oRect.height) * 100;
+        const sel = {
+          x1: (elLeft / oRect.width) * 100,
+          y1: (elTop / oRect.height) * 100,
+          x2: ((elLeft + elW) / oRect.width) * 100,
+          y2: ((elTop + elH) / oRect.height) * 100
+        };
+
+        showCommentForm(overlay, elLeft, elTop + elH + 10, xPct, yPct, sel, e.data.selector);
+      }
+    });
+
     function normalizeUrl(url) {
       try {
         const u = new URL(url);
@@ -934,18 +1044,28 @@
       const container = document.getElementById('iframeContainer');
       const imgContainer = document.getElementById('imageContainer');
 
+      const iframe = document.getElementById('previewFrame');
+
       if (mode === 'comment') {
         overlay.classList.remove('disabled');
         if (imgOverlay) imgOverlay.classList.remove('disabled');
         container.classList.add('comment-mode');
         imgContainer.classList.add('comment-mode');
-        setStatus('ok', 'Comment mode — click to pin, drag to select area');
+        if (proxyReady) {
+          iframe.contentWindow.postMessage('webreview-enable-picker', '*');
+          setStatus('ok', 'Comment mode — click elements or drag to select area');
+        } else {
+          setStatus('ok', 'Comment mode — click to pin, drag to select area');
+        }
       } else {
         overlay.classList.add('disabled');
         if (imgOverlay) imgOverlay.classList.add('disabled');
         container.classList.remove('comment-mode');
         imgContainer.classList.remove('comment-mode');
         cancelComment();
+        if (proxyReady) {
+          iframe.contentWindow.postMessage('webreview-disable-picker', '*');
+        }
         setStatus('ok', 'Browse mode — navigate freely');
       }
     }
@@ -1164,7 +1284,7 @@
       }
     }
 
-    function openSettings() { document.getElementById('settingsOverlay').classList.remove('hidden'); initSyncState(); }
+    function openSettings() { document.getElementById('settingsOverlay').classList.remove('hidden'); initSyncState(); initProxyState(); }
     function closeSettings() { document.getElementById('settingsOverlay').classList.add('hidden'); }
 
     // ---- Core ----
@@ -1221,31 +1341,58 @@
       updateIframeSize();
 
       const iframe = document.getElementById('previewFrame');
-      iframe.src = url;
+      proxyReady = false;
+      const proxiedUrl = getProxyUrl(url);
+      iframe.src = proxiedUrl || url;
       updateIframeSize();
       setMode('browse');
 
-      setStatus('loading', 'Loading ' + url + '...');
+      setStatus('loading', 'Cargando ' + url + (proxiedUrl ? ' (via proxy)' : '') + '...');
       document.getElementById('iframeFallbackBar').style.display = 'none';
 
       let iframeLoaded = false;
       let loadTimeout = setTimeout(() => {
         if (!iframeLoaded) showIframeBlocked();
-      }, 5000);
+      }, proxiedUrl ? 10000 : 5000);
 
       iframe.onload = () => {
-        clearTimeout(loadTimeout);
-        iframeLoaded = true;
-        try {
-          const doc = iframe.contentDocument || iframe.contentWindow.document;
-          if (!doc || !doc.body || doc.body.innerHTML === '') {
-            showIframeBlocked();
+        if (!iframeLoaded) {
+          // Carga inicial
+          clearTimeout(loadTimeout);
+          iframeLoaded = true;
+          if (proxiedUrl) {
+            setStatus('ok', 'Cargado via proxy — detección de elementos disponible en modo Comentario');
             return;
           }
-          setStatus('ok', 'Loaded — switch to Comment mode to add feedback');
-        } catch(e) {
-          setStatus('ok', 'Loaded — switch to Comment mode to add feedback');
-          document.getElementById('iframeFallbackBar').style.display = 'block';
+          try {
+            const doc = iframe.contentDocument || iframe.contentWindow.document;
+            if (!doc || !doc.body || doc.body.innerHTML === '') {
+              showIframeBlocked();
+              return;
+            }
+            setStatus('ok', 'Cargado — cambiá a modo Comentario para agregar feedback');
+          } catch(e) {
+            setStatus('ok', 'Cargado — cambiá a modo Comentario para agregar feedback');
+            document.getElementById('iframeFallbackBar').style.display = 'block';
+          }
+        } else {
+          // Navegación interna dentro del iframe
+          let newUrl = null;
+          try {
+            newUrl = normalizeUrl(iframe.contentWindow.location.href);
+          } catch(e) {
+            // cross-origin: no podemos leer la URL, limpiamos pines
+          }
+          if (newUrl && newUrl !== currentUrl) {
+            currentUrl = newUrl;
+            document.getElementById('urlInput').value = newUrl;
+            loadState(newUrl);
+            updateCommentBadge();
+          } else if (!newUrl) {
+            // cross-origin navigation: ocultamos pines hasta saber la URL real
+            document.querySelectorAll('#pinOverlay .pin, #pinOverlay .area-pin').forEach(p => p.remove());
+            setStatus('ok', 'Página navegada — los marcadores se actualizan al recargar');
+          }
         }
       };
       iframe.onerror = () => {
@@ -1648,6 +1795,7 @@
     }
 
     initSyncState();
+    initProxyState();
     updateCommentBadge();
 
     document.addEventListener('keydown', (e) => {
