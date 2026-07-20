@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WebReview — Visual Feedback Tool</title>
+  <!-- Firebase SDKs (compat build — works in plain HTML without bundler) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   <style>
     :root {
       --bg: #0f1117;
@@ -691,9 +695,76 @@
     .iframe-blocked p { font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 20px; }
     .iframe-blocked .blocked-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
     .iframe-blocked input[type="file"] { display: none; }
+
+    /* ---- Auth overlay ---- */
+    #authOverlay {
+      position: fixed; inset: 0; background: var(--bg);
+      z-index: 99999; display: flex; align-items: center; justify-content: center;
+    }
+    .auth-box {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      padding: 40px; width: 360px; display: flex; flex-direction: column; gap: 12px;
+    }
+    .auth-box h2 { font-size: 22px; font-weight: 700; margin: 0 0 4px; text-align: center; }
+    .auth-box p { font-size: 13px; color: var(--text-muted); text-align: center; margin: 0 0 8px; }
+    .auth-input {
+      background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      border-radius: 6px; padding: 10px 12px; font-size: 14px; width: 100%; box-sizing: border-box;
+    }
+    .auth-input:focus { outline: none; border-color: var(--accent); }
+    .auth-divider {
+      display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-muted);
+    }
+    .auth-divider::before, .auth-divider::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+    .btn-google {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 6px; padding: 10px; font-size: 14px; cursor: pointer; font-weight: 500;
+    }
+    .btn-google:hover { background: var(--border); }
+    .auth-error { font-size: 12px; color: var(--danger); text-align: center; min-height: 16px; }
+    .auth-toggle { font-size: 12px; color: var(--text-muted); text-align: center; }
+    .auth-toggle a { color: var(--accent); cursor: pointer; text-decoration: none; }
+    .auth-toggle a:hover { text-decoration: underline; }
+
+    /* User pill in topbar */
+    .user-pill {
+      display: flex; align-items: center; gap: 8px; font-size: 13px;
+      color: var(--text-muted); cursor: pointer; padding: 4px 10px;
+      border-radius: 6px; border: 1px solid var(--border);
+    }
+    .user-pill:hover { background: var(--surface-2); }
+    .user-pill img { width: 22px; height: 22px; border-radius: 50%; }
+    .user-pill .user-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   </style>
 </head>
 <body>
+
+  <!-- Auth Overlay -->
+  <div id="authOverlay">
+    <div class="auth-box">
+      <h2>WebReview</h2>
+      <p id="authSubtitle">Sign in to continue</p>
+
+      <button class="btn-google" onclick="authWithGoogle()">
+        <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Continue with Google
+      </button>
+
+      <div class="auth-divider">or</div>
+
+      <input type="email" id="authEmail" class="auth-input" placeholder="Email address" />
+      <input type="password" id="authPassword" class="auth-input" placeholder="Password" onkeydown="if(event.key==='Enter')authWithEmail()" />
+      <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="authWithEmail()" id="authSubmitBtn">Sign in</button>
+      <div class="auth-error" id="authError"></div>
+      <div class="auth-toggle">
+        <span id="authToggleText">Don't have an account?</span>
+        <a onclick="toggleAuthMode()">Sign up</a>
+      </div>
+    </div>
+  </div>
 
   <!-- Top Bar -->
   <div class="topbar">
@@ -721,6 +792,11 @@
     <button class="btn-icon admin-only" onclick="openSettings()" data-tooltip="Admin Settings">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
     </button>
+    <div class="user-pill" id="userPill" onclick="authSignOut()" title="Sign out" style="display:none">
+      <img id="userAvatar" src="" alt="" style="display:none">
+      <span class="user-name" id="userName"></span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+    </div>
   </div>
 
   <!-- Toolbar -->
@@ -788,7 +864,7 @@
 
       <!-- Iframe container -->
       <div class="iframe-container desktop" id="iframeContainer" style="display:none;">
-        <div class="comment-mode-label">MODO COMENTARIO — Click para pin, arrastrá para seleccionar área</div>
+        <div class="comment-mode-label">COMMENT MODE — Click to pin, drag to select an area</div>
         <iframe id="previewFrame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
         <div class="pin-overlay disabled" id="pinOverlay"></div>
         <div id="iframeFallbackBar" style="display:none; position:absolute; bottom:0; left:0; right:0; background:rgba(15,17,23,0.9); padding:8px 16px; text-align:center; z-index:40; font-size:12px; color:var(--text-muted); backdrop-filter:blur(4px);">
@@ -819,7 +895,7 @@
 
       <!-- Image review container -->
       <div id="imageContainer" style="display:none;">
-        <div class="comment-mode-label">MODO COMENTARIO — Click para pin, arrastrá para seleccionar área</div>
+        <div class="comment-mode-label">COMMENT MODE — Click to pin, drag to select an area</div>
         <img id="reviewImage" style="max-width:100%; display:block; border-radius:4px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);">
         <div class="pin-overlay disabled" id="imagePinOverlay"></div>
       </div>
@@ -924,6 +1000,102 @@
   <input type="file" id="importInput" accept=".json" style="display:none" onchange="handleImport(event)">
 
   <script>
+    // ---- Firebase ----
+    const ADMIN_EMAIL = 'howard.parra95@gmail.com';
+    firebase.initializeApp({
+      apiKey: "AIzaSyCDQMZpkcXsRulW4yrL-m2A_mCAWrWtRag",
+      authDomain: "webreview-b851b.firebaseapp.com",
+      projectId: "webreview-b851b",
+      storageBucket: "webreview-b851b.firebasestorage.app",
+      messagingSenderId: "652246555601",
+      appId: "1:652246555601:web:be20ff3ea53b699fd91ef0"
+    });
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+    let currentUser = null;
+    let isAuthSignUp = false;
+
+    // Encode site origin as a safe Firestore document ID
+    function siteDocId(origin) {
+      return btoa(origin).replace(/[+/=]/g, c => ({'+':`-`,'/':'_','=':''}[c]));
+    }
+
+    // Collection: projects/{uid}/sites/{siteDocId}
+    function siteRef(uid, origin) {
+      return db.collection('projects').doc(uid).collection('sites').doc(siteDocId(origin));
+    }
+
+    auth.onAuthStateChanged(async user => {
+      if (user) {
+        currentUser = user;
+        const adminMode = user.email === ADMIN_EMAIL;
+        document.getElementById('authOverlay').style.display = 'none';
+        document.getElementById('userPill').style.display = 'flex';
+        document.getElementById('userName').textContent = user.displayName || user.email;
+        const avatar = document.getElementById('userAvatar');
+        if (user.photoURL) { avatar.src = user.photoURL; avatar.style.display = 'block'; }
+        if (adminMode) {
+          document.body.classList.add('admin-mode');
+          isAdmin = true;
+        } else {
+          document.body.classList.remove('admin-mode');
+          isAdmin = false;
+        }
+        // Ensure user profile doc exists (for admin to list all clients)
+        db.collection('projects').doc(user.uid).set({
+          email: user.email,
+          displayName: user.displayName || '',
+          lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        renderProjects();
+      } else {
+        currentUser = null;
+        document.getElementById('authOverlay').style.display = 'flex';
+        document.getElementById('userPill').style.display = 'none';
+      }
+    });
+
+    function toggleAuthMode() {
+      isAuthSignUp = !isAuthSignUp;
+      document.getElementById('authSubmitBtn').textContent = isAuthSignUp ? 'Create account' : 'Sign in';
+      document.getElementById('authSubtitle').textContent = isAuthSignUp ? 'Create your account' : 'Sign in to continue';
+      document.getElementById('authToggleText').textContent = isAuthSignUp ? 'Already have an account?' : "Don't have an account?";
+      document.querySelector('.auth-toggle a').textContent = isAuthSignUp ? 'Sign in' : 'Sign up';
+      document.getElementById('authError').textContent = '';
+    }
+
+    function authWithGoogle() {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      auth.signInWithPopup(provider).catch(e => {
+        document.getElementById('authError').textContent = e.message;
+      });
+    }
+
+    function authWithEmail() {
+      const email = document.getElementById('authEmail').value.trim();
+      const password = document.getElementById('authPassword').value;
+      const errEl = document.getElementById('authError');
+      if (!email || !password) { errEl.textContent = 'Enter email and password.'; return; }
+      const fn = isAuthSignUp
+        ? auth.createUserWithEmailAndPassword.bind(auth)
+        : auth.signInWithEmailAndPassword.bind(auth);
+      fn(email, password).catch(e => {
+        errEl.textContent = e.code === 'auth/wrong-password' ? 'Incorrect password.' :
+          e.code === 'auth/user-not-found' ? 'No account found with this email.' :
+          e.code === 'auth/email-already-in-use' ? 'Email already in use.' : e.message;
+      });
+    }
+
+    function authSignOut() {
+      if (!confirm('Sign out?')) return;
+      auth.signOut().then(() => {
+        feedbackItems = []; currentUrl = '';
+        document.getElementById('splash').style.display = 'flex';
+        document.getElementById('toolbar').style.display = 'none';
+        document.getElementById('iframeContainer').style.display = 'none';
+      });
+    }
+
     // ---- State ----
     let feedbackItems = [];
     let currentDevice = 'desktop';
@@ -1050,10 +1222,10 @@
           document.getElementById('previewFrame').contentWindow.postMessage('webreview-enable-picker', '*');
         }
         renderPins();
-        setStatus('ok', 'Cargado con detección de elementos — cambiá a modo Comentario');
+        setStatus('ok', 'Loaded with element detection — switch to Comment mode');
       }
       if (e.data.type === 'webreview-navigating') {
-        setStatus('loading', 'Navegando a ' + e.data.url + '...');
+        setStatus('loading', 'Navigating to ' + e.data.url + '...');
       }
       if (e.data.type === 'webreview-element-selected' && currentMode === 'comment') {
         const r = e.data.rect;
@@ -1139,7 +1311,7 @@
     function pagePath(url) {
       try {
         const p = new URL(url).pathname;
-        return (p === '/' || p === '') ? 'Inicio' : p;
+        return (p === '/' || p === '') ? 'Home' : p;
       } catch(e) { return url || ''; }
     }
 
@@ -1170,9 +1342,9 @@
         imgContainer.classList.add('comment-mode');
         if (proxyReady) {
           iframe.contentWindow.postMessage('webreview-enable-picker', '*');
-          setStatus('ok', 'Modo Comentario — click en elementos o arrastrá para seleccionar área');
+          setStatus('ok', 'Comment mode — click elements or drag to select an area');
         } else {
-          setStatus('ok', 'Modo Comentario — click para pin, arrastrá para seleccionar área');
+          setStatus('ok', 'Comment mode — click to pin, drag to select an area');
         }
       } else {
         overlay.classList.add('disabled');
@@ -1184,7 +1356,7 @@
         if (proxyReady) {
           iframe.contentWindow.postMessage('webreview-disable-picker', '*');
         }
-        setStatus('ok', 'Modo navegación — navegá libremente');
+        setStatus('ok', 'Browse mode — navigate freely');
       }
     }
 
@@ -1298,32 +1470,71 @@
     initOverlay(document.getElementById('imagePinOverlay'));
 
     // ---- Projects ----
-    function getProjects() {
+    async function getProjects() {
+      if (!currentUser) return [];
       const projects = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key.startsWith(STORAGE_KEY + '_') && !key.endsWith('_draft')) {
-          try {
-            const data = JSON.parse(localStorage.getItem(key));
-            if (data && data.url) {
+      try {
+        if (currentUser.email === ADMIN_EMAIL) {
+          // Admin: fetch all users then all their sites
+          const usersSnap = await db.collection('projects').get();
+          for (const userDoc of usersSnap.docs) {
+            const sitesSnap = await db.collection('projects').doc(userDoc.id).collection('sites').get();
+            for (const siteDoc of sitesSnap.docs) {
+              const data = siteDoc.data();
+              if (data && data.siteOrigin) {
+                projects.push({
+                  url: data.siteOrigin,
+                  project: data.project || '',
+                  ownerEmail: data.ownerEmail || userDoc.data().email || '',
+                  count: (data.items || []).length,
+                  openCount: (data.items || []).filter(i => i.status === 'open').length,
+                  lastModified: data.updatedAt ? data.updatedAt.toDate().toISOString() : ''
+                });
+              }
+            }
+          }
+        } else {
+          // Client: only their own sites
+          const sitesSnap = await db.collection('projects').doc(currentUser.uid).collection('sites').get();
+          for (const siteDoc of sitesSnap.docs) {
+            const data = siteDoc.data();
+            if (data && data.siteOrigin) {
               projects.push({
-                url: data.url,
+                url: data.siteOrigin,
                 project: data.project || '',
+                ownerEmail: currentUser.email,
                 count: (data.items || []).length,
                 openCount: (data.items || []).filter(i => i.status === 'open').length,
-                lastModified: (data.items || []).reduce((latest, i) =>
-                  i.timestamp > latest ? i.timestamp : latest, '')
+                lastModified: data.updatedAt ? data.updatedAt.toDate().toISOString() : ''
               });
             }
-          } catch(e) {}
+          }
+        }
+      } catch(e) {
+        // Offline fallback: use localStorage
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key.startsWith(STORAGE_KEY + '_') && !key.endsWith('_draft')) {
+            try {
+              const data = JSON.parse(localStorage.getItem(key));
+              if (data && data.siteOrigin) projects.push({
+                url: data.siteOrigin, project: data.project || '',
+                ownerEmail: data.ownerEmail || '', count: (data.items || []).length,
+                openCount: (data.items || []).filter(i => i.status === 'open').length,
+                lastModified: ''
+              });
+            } catch(e2) {}
+          }
         }
       }
-      return projects.sort((a, b) => (b.lastModified || '').localeCompare(a.lastModified || ''));
+      return projects.sort((a, b) => b.lastModified.localeCompare(a.lastModified));
     }
 
-    function renderProjects() {
-      let projects = getProjects();
+    async function renderProjects() {
+      if (!currentUser) return;
       const grid = document.getElementById('projectsGrid');
+      grid.innerHTML = '<p style="font-size:12px;color:var(--text-muted);padding:8px 0;">Loading projects...</p>';
+      let projects = await getProjects();
 
       if (projectParam && !isAdmin) {
         projects = projects.filter(p =>
@@ -1336,9 +1547,10 @@
         return;
       }
       grid.innerHTML = '<h4>Projects</h4>' + projects.map(p => `
-        <div class="project-card" onclick="document.getElementById('urlInput').value='${p.url}';loadUrl();">
-          <div class="project-card-title">${p.project || extractDomain(p.url)}</div>
-          <div class="project-card-url">${p.url}</div>
+        <div class="project-card" onclick="document.getElementById('urlInput').value='${escapeHtml(p.url)}';loadUrl();">
+          <div class="project-card-title">${escapeHtml(p.project || extractDomain(p.url))}</div>
+          <div class="project-card-url">${escapeHtml(p.url)}</div>
+          ${p.ownerEmail && isAdmin ? `<div style="font-size:11px;color:var(--accent);margin-top:2px;">${escapeHtml(p.ownerEmail)}</div>` : ''}
           <div class="project-card-meta">
             <span>
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
@@ -1454,16 +1666,36 @@
     function closeSettings() { document.getElementById('settingsOverlay').classList.add('hidden'); }
 
     // ---- Core ----
-    function saveState() {
-      const data = { project: document.getElementById('projectName').value, url: siteKey(currentUrl), items: feedbackItems, nextId };
-      localStorage.setItem(STORAGE_KEY + '_' + siteKey(currentUrl), JSON.stringify(data));
+    async function saveState() {
+      if (!currentUser) return;
+      const origin = siteKey(currentUrl);
+      const data = {
+        project: document.getElementById('projectName').value,
+        siteOrigin: origin,
+        ownerEmail: currentUser.email,
+        ownerName: currentUser.displayName || '',
+        items: feedbackItems,
+        nextId,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      };
+      // Also keep localStorage as offline cache
+      localStorage.setItem(STORAGE_KEY + '_' + origin, JSON.stringify(data));
+      try { await siteRef(currentUser.uid, origin).set(data, { merge: true }); } catch(e) {}
     }
 
-    function loadState(url) {
-      const key = STORAGE_KEY + '_' + siteKey(url);
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        const data = JSON.parse(raw);
+    async function loadState(url) {
+      if (!currentUser) return;
+      const origin = siteKey(url);
+      let data = null;
+      try {
+        const snap = await siteRef(currentUser.uid, origin).get();
+        if (snap.exists) data = snap.data();
+      } catch(e) {
+        // Offline: fall back to localStorage
+        const raw = localStorage.getItem(STORAGE_KEY + '_' + origin);
+        if (raw) try { data = JSON.parse(raw); } catch(e2) {}
+      }
+      if (data) {
         feedbackItems = (data.items || []).map(item => ({
           ...item,
           url: normalizeUrl(item.url || url),
@@ -1471,7 +1703,6 @@
         }));
         nextId = feedbackItems.length > 0 ? Math.max(...feedbackItems.map(f => f.id)) + 1 : 1;
         if (data.project) document.getElementById('projectName').value = data.project;
-        saveState();
       } else {
         feedbackItems = [];
         nextId = 1;
@@ -1514,7 +1745,7 @@
       updateIframeSize();
       setMode('browse');
 
-      setStatus('loading', 'Cargando ' + url + (proxiedUrl ? ' (via proxy)' : '') + '...');
+      setStatus('loading', 'Loading ' + url + (proxiedUrl ? ' (via proxy)' : '') + '...');
       document.getElementById('iframeFallbackBar').style.display = 'none';
 
       let iframeLoaded = false;
@@ -1528,7 +1759,7 @@
           clearTimeout(loadTimeout);
           iframeLoaded = true;
           if (proxiedUrl) {
-            setStatus('ok', 'Cargado via proxy — detección de elementos disponible en modo Comentario');
+            setStatus('ok', 'Loaded via proxy — element detection available in Comment mode');
             return;
           }
           try {
@@ -1537,9 +1768,9 @@
               showIframeBlocked();
               return;
             }
-            setStatus('ok', 'Cargado — cambiá a modo Comentario para agregar feedback');
+            setStatus('ok', 'Loaded — switch to Comment mode to add feedback');
           } catch(e) {
-            setStatus('ok', 'Cargado — cambiá a modo Comentario para agregar feedback');
+            setStatus('ok', 'Loaded — switch to Comment mode to add feedback');
             document.getElementById('iframeFallbackBar').style.display = 'block';
           }
         } else {
@@ -1558,7 +1789,7 @@
           } else if (!newUrl) {
             // cross-origin navigation: ocultamos pines hasta saber la URL real
             document.querySelectorAll('#pinOverlay .pin, #pinOverlay .area-pin').forEach(p => p.remove());
-            setStatus('ok', 'Página navegada — los marcadores se actualizan al recargar');
+            setStatus('ok', 'Page navigated — markers update on reload');
           }
         }
       };
@@ -1818,8 +2049,8 @@
             ${item.priority !== 'normal' ? `<span style="font-size:11px;color:${item.priority === 'critical' ? 'var(--danger)' : 'var(--warning)'};">${item.priority}</span>` : ''}
             ${item.selection ? '<span class="feedback-card-selection">Area</span>' : ''}
             <div class="feedback-card-actions">
-              <button onclick="event.stopPropagation();toggleResolved(${item.id})" title="${item.status === 'resolved' ? 'Reabrir' : 'Resolver'}">${item.status === 'resolved' ? '&#8617;' : '&#10003;'}</button>
-              <button onclick="event.stopPropagation();deleteFeedback(${item.id})" title="Eliminar">&#10005;</button>
+              <button onclick="event.stopPropagation();toggleResolved(${item.id})" title="${item.status === 'resolved' ? 'Reopen' : 'Resolve'}">${item.status === 'resolved' ? '&#8617;' : '&#10003;'}</button>
+              <button onclick="event.stopPropagation();deleteFeedback(${item.id})" title="Delete">&#10005;</button>
             </div>
           </div>
           <div class="feedback-card-comment">${escapeHtml(item.comment)}</div>
@@ -1853,7 +2084,7 @@
     }
 
     function deleteFeedback(id) {
-      if (!confirm('¿Eliminar el comentario #' + id + '?')) return;
+      if (!confirm('Delete comment #' + id + '?')) return;
       feedbackItems = feedbackItems.filter(f => f.id !== id);
       if (activeFeedbackId === id) activeFeedbackId = null;
       renumberItems();
@@ -1992,22 +2223,10 @@
     })();
 
     // ---- Init ----
-    if (projectParam && !isAdmin) {
-      const projects = getProjects();
-      const match = projects.find(p => p.project.toLowerCase() === projectParam.toLowerCase());
-      if (match) {
-        document.getElementById('urlInput').value = match.url;
-        setTimeout(() => loadUrl(), 100);
-      } else {
-        renderProjects();
-      }
-    } else {
-      renderProjects();
-    }
-
+    // El auth listener en onAuthStateChanged maneja la inicialización de proyectos.
+    // Aquí solo configuramos lo que no depende del usuario.
     initSyncState();
     initProxyState();
-    updateCommentBadge();
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { cancelComment(); document.getElementById('screenshotModal').classList.add('hidden'); closeSettings(); }
