@@ -954,6 +954,7 @@
     function initOverlay(overlay) {
       overlay.addEventListener('mousedown', (e) => {
         if (currentMode !== 'comment') return;
+        if (pendingCommentForm && pendingCommentForm.contains(e.target)) return;
         if (pendingCommentForm) { pendingCommentForm.remove(); pendingCommentForm = null; return; }
         const rect = overlay.getBoundingClientRect();
         dragStart = { x: e.clientX - rect.left, y: e.clientY - rect.top, rect };
