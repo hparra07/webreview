@@ -109,27 +109,11 @@ const ELEMENT_PICKER_SCRIPT = `
     var c = ensurePinsContainer();
     c.innerHTML = '';
     currentPins.forEach(function(p) {
+      // Posicionamiento por coordenadas exactas del documento (donde se hizo
+      // el click). No se usa el selector CSS: con clases repetidas terminaba
+      // apuntando al primer elemento coincidente en vez del marcado.
       var x = p.x, y = p.y;
       var selRect = p.sel || null;
-
-      // Si el pin tiene selector, anclamos al elemento real del DOM
-      // (sobrevive a cambios de layout y responsive)
-      if (p.selector) {
-        try {
-          var el = document.querySelector(p.selector);
-          if (el) {
-            var r = el.getBoundingClientRect();
-            x = r.left + window.scrollX + r.width / 2;
-            y = r.top + window.scrollY + r.height / 2;
-            selRect = {
-              x1: r.left + window.scrollX,
-              y1: r.top + window.scrollY,
-              x2: r.left + window.scrollX + r.width,
-              y2: r.top + window.scrollY + r.height
-            };
-          }
-        } catch (err) {}
-      }
 
       // Recuadro del área, solo para el pin seleccionado
       if (p.id === activePinId && selRect) {

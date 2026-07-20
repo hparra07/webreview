@@ -1135,6 +1135,14 @@
       } catch(e) { return url; }
     }
 
+    // Ruta legible de la página para mostrar en las tarjetas ("Inicio" o "/contacto")
+    function pagePath(url) {
+      try {
+        const p = new URL(url).pathname;
+        return (p === '/' || p === '') ? 'Inicio' : p;
+      } catch(e) { return url || ''; }
+    }
+
     // Clave del proyecto: el dominio completo. Un proyecto = un sitio,
     // los pines de cada página se filtran por su URL exacta.
     function siteKey(url) {
@@ -1713,12 +1721,15 @@
       const domPinsActive = proxyReady && proxySupportsPins && !isImageMode;
       if (domPinsActive) {
         const iframe = document.getElementById('previewFrame');
+        // El pin se posiciona SIEMPRE por coordenadas exactas del documento.
+        // No usamos el selector CSS: con clases repetidas apuntaba al primer
+        // elemento que coincidiera en vez del que se marcó.
         const pinsForIframe = allVisible.filter(i => i.anchor).map(i => ({
           id: i.id,
           x: i.anchor.x,
           y: i.anchor.y,
           sel: i.anchor.sel || null,
-          selector: i.anchor.selector || null,
+          selector: null,
           status: i.status
         }));
         try {
@@ -1807,13 +1818,13 @@
             ${item.priority !== 'normal' ? `<span style="font-size:11px;color:${item.priority === 'critical' ? 'var(--danger)' : 'var(--warning)'};">${item.priority}</span>` : ''}
             ${item.selection ? '<span class="feedback-card-selection">Area</span>' : ''}
             <div class="feedback-card-actions">
-              <button onclick="event.stopPropagation();toggleResolved(${item.id})" title="${item.status === 'resolved' ? 'Reopen' : 'Resolve'}">${item.status === 'resolved' ? '&#8617;' : '&#10003;'}</button>
-              <button class="admin-only" onclick="event.stopPropagation();deleteFeedback(${item.id})" title="Delete">&#10005;</button>
+              <button onclick="event.stopPropagation();toggleResolved(${item.id})" title="${item.status === 'resolved' ? 'Reabrir' : 'Resolver'}">${item.status === 'resolved' ? '&#8617;' : '&#10003;'}</button>
+              <button onclick="event.stopPropagation();deleteFeedback(${item.id})" title="Eliminar">&#10005;</button>
             </div>
           </div>
           <div class="feedback-card-comment">${escapeHtml(item.comment)}</div>
           ${item.screenshot ? `<img class="feedback-card-screenshot" src="${item.screenshot}" onclick="event.stopPropagation();showScreenshot(this.src)" alt="Screenshot">` : ''}
-          <div class="feedback-card-meta">${formatDate(item.timestamp)} · ${item.x.toFixed(0)}%, ${item.y.toFixed(0)}%</div>
+          <div class="feedback-card-meta">${formatDate(item.timestamp)} · <span title="${escapeHtml(item.url || '')}">${escapeHtml(pagePath(item.url))}</span></div>
           <div class="reply-thread" onclick="event.stopPropagation()">
             ${replies}
             <div class="reply-form">
@@ -1842,6 +1853,7 @@
     }
 
     function deleteFeedback(id) {
+      if (!confirm('¿Eliminar el comentario #' + id + '?')) return;
       feedbackItems = feedbackItems.filter(f => f.id !== id);
       if (activeFeedbackId === id) activeFeedbackId = null;
       renumberItems();
