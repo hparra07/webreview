@@ -90,6 +90,71 @@ const ELEMENT_PICKER_SCRIPT = `
     window.parent.postMessage(data, '*');
   }, true);
 
+  // ---- Renderizado de pines DENTRO de la página (anclados al DOM) ----
+  var pinsContainer = null;
+  var currentPins = [];
+  var activePinId = null;
+
+  function ensurePinsContainer() {
+    if (pinsContainer && document.body.contains(pinsContainer)) return pinsContainer;
+    pinsContainer = document.createElement('div');
+    pinsContainer.id = '__webreview-pins';
+    pinsContainer.setAttribute('data-webreview-injected', 'true');
+    pinsContainer.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:0;overflow:visible;z-index:999998;pointer-events:none;';
+    document.body.appendChild(pinsContainer);
+    return pinsContainer;
+  }
+
+  function renderPinsInPage() {
+    var c = ensurePinsContainer();
+    c.innerHTML = '';
+    currentPins.forEach(function(p) {
+      var x = p.x, y = p.y;
+      var selRect = p.sel || null;
+
+      // Si el pin tiene selector, anclamos al elemento real del DOM
+      // (sobrevive a cambios de layout y responsive)
+      if (p.selector) {
+        try {
+          var el = document.querySelector(p.selector);
+          if (el) {
+            var r = el.getBoundingClientRect();
+            x = r.left + window.scrollX + r.width / 2;
+            y = r.top + window.scrollY + r.height / 2;
+            selRect = {
+              x1: r.left + window.scrollX,
+              y1: r.top + window.scrollY,
+              x2: r.left + window.scrollX + r.width,
+              y2: r.top + window.scrollY + r.height
+            };
+          }
+        } catch (err) {}
+      }
+
+      // Recuadro del área, solo para el pin seleccionado
+      if (p.id === activePinId && selRect) {
+        var rect = document.createElement('div');
+        rect.style.cssText = 'position:absolute;border:2px solid #ef4444;background:rgba(239,68,68,0.08);border-radius:3px;pointer-events:none;' +
+          'left:' + selRect.x1 + 'px;top:' + selRect.y1 + 'px;width:' + (selRect.x2 - selRect.x1) + 'px;height:' + (selRect.y2 - selRect.y1) + 'px;';
+        c.appendChild(rect);
+      }
+
+      var pin = document.createElement('div');
+      var bg = p.status === 'resolved' ? '#22c55e' : '#ef4444';
+      var ring = p.id === activePinId ? 'box-shadow:0 0 0 3px rgba(239,68,68,0.35),0 2px 6px rgba(0,0,0,0.4);' : 'box-shadow:0 2px 6px rgba(0,0,0,0.4);';
+      pin.style.cssText = 'position:absolute;left:' + x + 'px;top:' + y + 'px;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50%;background:' + bg + ';color:#fff;display:flex;align-items:center;justify-content:center;font:600 12px -apple-system,sans-serif;pointer-events:auto;cursor:pointer;border:2px solid #fff;' + ring;
+      pin.textContent = p.id;
+      pin.addEventListener('click', function(ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        window.parent.postMessage({ type: 'webreview-pin-clicked', id: p.id }, '*');
+      });
+      c.appendChild(pin);
+    });
+  }
+
+  window.addEventListener('resize', function() { renderPinsInPage(); });
+
   window.addEventListener('message', function(e) {
     if (e.data === 'webreview-enable-picker') {
       enabled = true;
@@ -98,6 +163,29 @@ const ELEMENT_PICKER_SCRIPT = `
       enabled = false;
       document.body.style.cursor = '';
       if (highlight) highlight.style.display = 'none';
+    } else if (e.data && e.data.type === 'webreview-render-pins') {
+      currentPins = e.data.pins || [];
+      activePinId = e.data.activeId || null;
+      renderPinsInPage();
+    } else if (e.data && e.data.type === 'webreview-hover') {
+      // El padre pregunta qué elemento hay en estas coordenadas (viewport)
+      var hovered = document.elementFromPoint(e.data.x, e.data.y);
+      if (hovered && hovered.closest && hovered.closest('#__webreview-pins')) hovered = null;
+      if (hovered && hovered.hasAttribute && hovered.hasAttribute('data-webreview-injected')) hovered = null;
+      if (hovered && (hovered === document.body || hovered === document.documentElement)) hovered = null;
+      if (hovered) {
+        var hr = hovered.getBoundingClientRect();
+        window.parent.postMessage({
+          type: 'webreview-hover-result',
+          selector: getSelector(hovered),
+          tag: hovered.tagName.toLowerCase(),
+          rect: { x: hr.left, y: hr.top, width: hr.width, height: hr.height },
+          scrollX: window.scrollX,
+          scrollY: window.scrollY
+        }, '*');
+      } else {
+        window.parent.postMessage({ type: 'webreview-hover-result', selector: null }, '*');
+      }
     }
   });
 
@@ -143,8 +231,25 @@ const ELEMENT_PICKER_SCRIPT = `
     } catch (err) {}
   }, true);
 
+  // Avisar al padre la posición de scroll para que los pines queden anclados al contenido
+  var scrollTicking = false;
+  function reportScroll() {
+    if (scrollTicking) return;
+    scrollTicking = true;
+    requestAnimationFrame(function() {
+      scrollTicking = false;
+      window.parent.postMessage({
+        type: 'webreview-scroll',
+        scrollX: window.scrollX,
+        scrollY: window.scrollY
+      }, '*');
+    });
+  }
+  window.addEventListener('scroll', reportScroll, true);
+  window.addEventListener('resize', reportScroll);
+
   var currentTargetUrl = new URLSearchParams(window.location.search).get('url') || '';
-  window.parent.postMessage({ type: 'webreview-proxy-ready', url: currentTargetUrl }, '*');
+  window.parent.postMessage({ type: 'webreview-proxy-ready', url: currentTargetUrl, version: 2 }, '*');
 })();
 </script>
 `;

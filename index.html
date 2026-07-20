@@ -267,6 +267,7 @@
       width: 100%; height: 100%;
       cursor: crosshair;
       z-index: 10;
+      overflow: hidden; /* recorta pines anclados que quedan fuera al scrollear */
     }
     .pin-overlay.disabled { pointer-events: none; cursor: default; }
 
@@ -312,6 +313,28 @@
       pointer-events: none;
       z-index: 14;
       border-radius: 3px;
+    }
+
+    /* Recuadro identificador de elemento (hover en modo Comentario con proxy) */
+    .element-highlight {
+      position: absolute;
+      border: 2px solid var(--accent);
+      background: rgba(99,102,241,0.08);
+      pointer-events: none;
+      z-index: 13;
+      border-radius: 3px;
+      transition: all 0.08s ease;
+    }
+    .element-highlight .element-label {
+      position: absolute;
+      top: -22px;
+      left: 0;
+      background: var(--accent);
+      color: white;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 3px;
+      white-space: nowrap;
     }
 
     /* Sidebar */
@@ -765,7 +788,7 @@
 
       <!-- Iframe container -->
       <div class="iframe-container desktop" id="iframeContainer" style="display:none;">
-        <div class="comment-mode-label">COMMENT MODE — Click to pin, drag to select area</div>
+        <div class="comment-mode-label">MODO COMENTARIO — Click para pin, arrastrá para seleccionar área</div>
         <iframe id="previewFrame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
         <div class="pin-overlay disabled" id="pinOverlay"></div>
         <div id="iframeFallbackBar" style="display:none; position:absolute; bottom:0; left:0; right:0; background:rgba(15,17,23,0.9); padding:8px 16px; text-align:center; z-index:40; font-size:12px; color:var(--text-muted); backdrop-filter:blur(4px);">
@@ -796,7 +819,7 @@
 
       <!-- Image review container -->
       <div id="imageContainer" style="display:none;">
-        <div class="comment-mode-label">COMMENT MODE — Click to pin, drag to select area</div>
+        <div class="comment-mode-label">MODO COMENTARIO — Click para pin, arrastrá para seleccionar área</div>
         <img id="reviewImage" style="max-width:100%; display:block; border-radius:4px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);">
         <div class="pin-overlay disabled" id="imagePinOverlay"></div>
       </div>
@@ -935,6 +958,10 @@
       url: '', connected: false
     };
     let proxyReady = false;
+    let proxySupportsPins = false; // el worker desplegado renderiza pines dentro de la página (version >= 2)
+    let iframeScroll = { x: 0, y: 0 }; // scroll actual del iframe proxificado
+    let lastHover = null; // último elemento detectado bajo el mouse (via proxy)
+    let hoverPending = false;
 
     function getProxyUrl(targetUrl) {
       if (!proxyConfig.connected || !proxyConfig.url) return null;
@@ -991,8 +1018,24 @@
     // Listen for messages from proxied iframe
     window.addEventListener('message', function(e) {
       if (!e.data || typeof e.data !== 'object') return;
+      if (e.data.type === 'webreview-scroll') {
+        iframeScroll = { x: e.data.scrollX || 0, y: e.data.scrollY || 0 };
+        renderPins();
+        return;
+      }
+      if (e.data.type === 'webreview-pin-clicked') {
+        selectFeedback(e.data.id);
+        return;
+      }
+      if (e.data.type === 'webreview-hover-result') {
+        hoverPending = false;
+        updateElementHighlight(e.data);
+        return;
+      }
       if (e.data.type === 'webreview-proxy-ready') {
         proxyReady = true;
+        proxySupportsPins = (e.data.version || 1) >= 2;
+        iframeScroll = { x: 0, y: 0 };
         // Si la página navegó dentro del iframe, actualizamos URL y pines
         if (e.data.url) {
           const navUrl = normalizeUrl(e.data.url);
@@ -1006,6 +1049,7 @@
         if (currentMode === 'comment') {
           document.getElementById('previewFrame').contentWindow.postMessage('webreview-enable-picker', '*');
         }
+        renderPins();
         setStatus('ok', 'Cargado con detección de elementos — cambiá a modo Comentario');
       }
       if (e.data.type === 'webreview-navigating') {
@@ -1035,9 +1079,52 @@
           y2: ((elTop + elH) / oRect.height) * 100
         };
 
-        showCommentForm(overlay, elLeft, elTop + elH + 10, xPct, yPct, sel, e.data.selector);
+        // Ancla en coordenadas del documento (independiente del scroll)
+        const anchor = {
+          x: r.x + (e.data.scrollX || 0) + r.width / 2,
+          y: r.y + (e.data.scrollY || 0) + r.height / 2,
+          sel: {
+            x1: r.x + (e.data.scrollX || 0),
+            y1: r.y + (e.data.scrollY || 0),
+            x2: r.x + (e.data.scrollX || 0) + r.width,
+            y2: r.y + (e.data.scrollY || 0) + r.height
+          },
+          selector: e.data.selector || null
+        };
+
+        showCommentForm(overlay, elLeft, elTop + elH + 10, xPct, yPct, sel, anchor);
       }
     });
+
+    // Dibuja el recuadro que identifica el elemento bajo el mouse (div, section, h1, etc.)
+    function updateElementHighlight(data) {
+      const overlay = document.getElementById('pinOverlay');
+      let hl = overlay.querySelector('.element-highlight');
+      if (!data || !data.selector || currentMode !== 'comment' || pendingCommentForm) {
+        lastHover = null;
+        if (hl) hl.remove();
+        return;
+      }
+      lastHover = data;
+      if (!hl) {
+        hl = document.createElement('div');
+        hl.className = 'element-highlight';
+        hl.innerHTML = '<div class="element-label"></div>';
+        overlay.appendChild(hl);
+      }
+      const r = data.rect;
+      hl.style.left = r.x + 'px';
+      hl.style.top = r.y + 'px';
+      hl.style.width = r.width + 'px';
+      hl.style.height = r.height + 'px';
+      hl.querySelector('.element-label').textContent = data.selector + ' (' + Math.round(r.width) + 'x' + Math.round(r.height) + ')';
+    }
+
+    function clearElementHighlight() {
+      lastHover = null;
+      const hl = document.getElementById('pinOverlay').querySelector('.element-highlight');
+      if (hl) hl.remove();
+    }
 
     function normalizeUrl(url) {
       try {
@@ -1046,6 +1133,12 @@
         if (normalized.endsWith('/') && u.pathname !== '/') normalized = normalized.slice(0, -1);
         return normalized;
       } catch(e) { return url; }
+    }
+
+    // Clave del proyecto: el dominio completo. Un proyecto = un sitio,
+    // los pines de cada página se filtran por su URL exacta.
+    function siteKey(url) {
+      try { return new URL(url).origin; } catch(e) { return normalizeUrl(url); }
     }
 
     // ---- Mode Toggle ----
@@ -1069,9 +1162,9 @@
         imgContainer.classList.add('comment-mode');
         if (proxyReady) {
           iframe.contentWindow.postMessage('webreview-enable-picker', '*');
-          setStatus('ok', 'Comment mode — click elements or drag to select area');
+          setStatus('ok', 'Modo Comentario — click en elementos o arrastrá para seleccionar área');
         } else {
-          setStatus('ok', 'Comment mode — click to pin, drag to select area');
+          setStatus('ok', 'Modo Comentario — click para pin, arrastrá para seleccionar área');
         }
       } else {
         overlay.classList.add('disabled');
@@ -1079,10 +1172,11 @@
         container.classList.remove('comment-mode');
         imgContainer.classList.remove('comment-mode');
         cancelComment();
+        clearElementHighlight();
         if (proxyReady) {
           iframe.contentWindow.postMessage('webreview-disable-picker', '*');
         }
-        setStatus('ok', 'Browse mode — navigate freely');
+        setStatus('ok', 'Modo navegación — navegá libremente');
       }
     }
 
@@ -1098,12 +1192,25 @@
       });
 
       overlay.addEventListener('mousemove', (e) => {
+        // Detección de elementos: preguntar al iframe qué hay bajo el mouse
+        if (!dragStart && currentMode === 'comment' && proxyReady && overlay.id === 'pinOverlay' && !pendingCommentForm && !hoverPending) {
+          const oRect = overlay.getBoundingClientRect();
+          hoverPending = true;
+          try {
+            document.getElementById('previewFrame').contentWindow.postMessage({
+              type: 'webreview-hover',
+              x: e.clientX - oRect.left,
+              y: e.clientY - oRect.top
+            }, '*');
+          } catch(err) { hoverPending = false; }
+        }
         if (!dragStart) return;
         const rect = dragStart.rect;
         const dx = (e.clientX - rect.left) - dragStart.x;
         const dy = (e.clientY - rect.top) - dragStart.y;
         if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
           isDragging = true;
+          clearElementHighlight();
           if (!selectionRect) {
             selectionRect = document.createElement('div');
             selectionRect.className = 'selection-rect';
@@ -1123,20 +1230,55 @@
       overlay.addEventListener('mouseup', (e) => {
         if (!dragStart) return;
         const rect = dragStart.rect;
+        const useAnchor = proxyReady && overlay.id === 'pinOverlay';
         if (isDragging && selectionRect) {
-          const x1Pct = (parseFloat(selectionRect.style.left) / rect.width) * 100;
-          const y1Pct = (parseFloat(selectionRect.style.top) / rect.height) * 100;
-          const x2Pct = x1Pct + (parseFloat(selectionRect.style.width) / rect.width) * 100;
-          const y2Pct = y1Pct + (parseFloat(selectionRect.style.height) / rect.height) * 100;
+          const sx = parseFloat(selectionRect.style.left);
+          const sy = parseFloat(selectionRect.style.top);
+          const sw = parseFloat(selectionRect.style.width);
+          const sh = parseFloat(selectionRect.style.height);
+          const x1Pct = (sx / rect.width) * 100;
+          const y1Pct = (sy / rect.height) * 100;
+          const x2Pct = x1Pct + (sw / rect.width) * 100;
+          const y2Pct = y1Pct + (sh / rect.height) * 100;
           const centerX = (x1Pct + x2Pct) / 2;
           const centerY = (y1Pct + y2Pct) / 2;
-          showCommentForm(overlay, parseFloat(selectionRect.style.left), parseFloat(selectionRect.style.top) + parseFloat(selectionRect.style.height) + 10, centerX, centerY, { x1: x1Pct, y1: y1Pct, x2: x2Pct, y2: y2Pct });
+          const anchor = useAnchor ? {
+            x: sx + sw / 2 + iframeScroll.x,
+            y: sy + sh / 2 + iframeScroll.y,
+            sel: { x1: sx + iframeScroll.x, y1: sy + iframeScroll.y, x2: sx + sw + iframeScroll.x, y2: sy + sh + iframeScroll.y },
+            selector: null
+          } : null;
+          showCommentForm(overlay, sx, sy + sh + 10, centerX, centerY, { x1: x1Pct, y1: y1Pct, x2: x2Pct, y2: y2Pct }, anchor);
           selectionRect.remove();
           selectionRect = null;
+        } else if (useAnchor && lastHover && lastHover.rect) {
+          // Click sobre un elemento detectado: anclar el pin a ese elemento del DOM
+          const r = lastHover.rect;
+          const scrollX = lastHover.scrollX || 0;
+          const scrollY = lastHover.scrollY || 0;
+          const xPct = ((r.x + r.width / 2) / rect.width) * 100;
+          const yPct = ((r.y + r.height / 2) / rect.height) * 100;
+          const sel = {
+            x1: (r.x / rect.width) * 100,
+            y1: (r.y / rect.height) * 100,
+            x2: ((r.x + r.width) / rect.width) * 100,
+            y2: ((r.y + r.height) / rect.height) * 100
+          };
+          const anchor = {
+            x: r.x + scrollX + r.width / 2,
+            y: r.y + scrollY + r.height / 2,
+            sel: { x1: r.x + scrollX, y1: r.y + scrollY, x2: r.x + scrollX + r.width, y2: r.y + scrollY + r.height },
+            selector: lastHover.selector
+          };
+          clearElementHighlight();
+          showCommentForm(overlay, r.x, r.y + r.height + 10, xPct, yPct, sel, anchor);
         } else {
-          const xPct = ((e.clientX - rect.left) / rect.width) * 100;
-          const yPct = ((e.clientY - rect.top) / rect.height) * 100;
-          showCommentForm(overlay, e.clientX - rect.left, e.clientY - rect.top, xPct, yPct, null);
+          const cx = e.clientX - rect.left;
+          const cy = e.clientY - rect.top;
+          const xPct = (cx / rect.width) * 100;
+          const yPct = (cy / rect.height) * 100;
+          const anchor = useAnchor ? { x: cx + iframeScroll.x, y: cy + iframeScroll.y, sel: null, selector: null } : null;
+          showCommentForm(overlay, cx, cy, xPct, yPct, null, anchor);
         }
         dragStart = null;
         isDragging = false;
@@ -1305,12 +1447,12 @@
 
     // ---- Core ----
     function saveState() {
-      const data = { project: document.getElementById('projectName').value, url: currentUrl, items: feedbackItems, nextId };
-      localStorage.setItem(STORAGE_KEY + '_' + normalizeUrl(currentUrl), JSON.stringify(data));
+      const data = { project: document.getElementById('projectName').value, url: siteKey(currentUrl), items: feedbackItems, nextId };
+      localStorage.setItem(STORAGE_KEY + '_' + siteKey(currentUrl), JSON.stringify(data));
     }
 
     function loadState(url) {
-      const key = STORAGE_KEY + '_' + normalizeUrl(url);
+      const key = STORAGE_KEY + '_' + siteKey(url);
       const raw = localStorage.getItem(key);
       if (raw) {
         const data = JSON.parse(raw);
@@ -1325,6 +1467,7 @@
       } else {
         feedbackItems = [];
         nextId = 1;
+        document.getElementById('projectName').value = '';
       }
       renderFeedback();
       renderPins();
@@ -1468,8 +1611,9 @@
       }
     }
 
-    function showCommentForm(parent, x, y, xPct, yPct, selection) {
+    function showCommentForm(parent, x, y, xPct, yPct, selection, anchor) {
       if (pendingCommentForm) pendingCommentForm.remove();
+      clearElementHighlight();
       const form = document.createElement('div');
       form.className = 'comment-form';
       form.style.left = Math.min(x, parent.offsetWidth - 320) + 'px';
@@ -1494,9 +1638,9 @@
       pendingCommentForm = form;
 
       const submitBtn = form.querySelector('#submitBtn');
-      submitBtn.onclick = () => submitComment(xPct, yPct, selection);
+      submitBtn.onclick = () => submitComment(xPct, yPct, selection, anchor);
       form.querySelector('textarea').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitComment(xPct, yPct, selection);
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitComment(xPct, yPct, selection, anchor);
         if (e.key === 'Escape') cancelComment();
       });
     }
@@ -1509,7 +1653,7 @@
       if (pendingCommentForm) { pendingCommentForm.remove(); pendingCommentForm = null; }
     }
 
-    function submitComment(xPct, yPct, selection) {
+    function submitComment(xPct, yPct, selection, anchor) {
       const textarea = pendingCommentForm.querySelector('textarea');
       const comment = textarea.value.trim();
       if (!comment) { textarea.focus(); return; }
@@ -1519,7 +1663,8 @@
         device: currentDevice, status: 'open',
         timestamp: new Date().toISOString(), url: currentUrl,
         screenshot: null, replies: [],
-        selection: selection || null
+        selection: selection || null,
+        anchor: anchor || null
       };
       feedbackItems.push(item);
       cancelComment();
@@ -1555,35 +1700,72 @@
     }
 
     function renderPins() {
+      const nUrl = normalizeUrl(currentUrl);
+      const allVisible = feedbackItems.filter(item => {
+        if (normalizeUrl(item.url) !== nUrl) return false;
+        if (activeFilter === 'open') return item.status === 'open';
+        if (activeFilter === 'resolved') return item.status === 'resolved';
+        return true;
+      });
+
+      // Pines anclados: se renderizan DENTRO de la página proxificada (DOM real),
+      // así scrollean nativamente con el contenido.
+      const domPinsActive = proxyReady && proxySupportsPins && !isImageMode;
+      if (domPinsActive) {
+        const iframe = document.getElementById('previewFrame');
+        const pinsForIframe = allVisible.filter(i => i.anchor).map(i => ({
+          id: i.id,
+          x: i.anchor.x,
+          y: i.anchor.y,
+          sel: i.anchor.sel || null,
+          selector: i.anchor.selector || null,
+          status: i.status
+        }));
+        try {
+          iframe.contentWindow.postMessage({ type: 'webreview-render-pins', pins: pinsForIframe, activeId: activeFeedbackId }, '*');
+        } catch(e) {}
+      }
+
       const overlays = [document.getElementById('pinOverlay'), document.getElementById('imagePinOverlay')];
       overlays.forEach(overlay => {
         if (!overlay) return;
         overlay.querySelectorAll('.pin, .pin-selection-rect').forEach(p => p.remove());
 
-        const nUrl = normalizeUrl(currentUrl);
-        const visibleItems = feedbackItems.filter(item => {
-          if (normalizeUrl(item.url) !== nUrl) return false;
-          if (activeFilter === 'open') return item.status === 'open';
-          if (activeFilter === 'resolved') return item.status === 'resolved';
-          return true;
-        });
+        allVisible.forEach(item => {
+          // Si el pin vive dentro del iframe, no lo dibujamos en el overlay
+          if (item.anchor && domPinsActive && overlay.id === 'pinOverlay') return;
 
-        visibleItems.forEach(item => {
+          // Fallback: ancla con compensación de scroll (worker viejo sin soporte de pines)
+          const anchored = item.anchor && proxyReady && overlay.id === 'pinOverlay';
+
           // El recuadro del área solo se muestra cuando el comentario está seleccionado
           if (item.selection && activeFeedbackId === item.id) {
             const rect = document.createElement('div');
             rect.className = 'pin-selection-rect';
-            rect.style.left = item.selection.x1 + '%';
-            rect.style.top = item.selection.y1 + '%';
-            rect.style.width = (item.selection.x2 - item.selection.x1) + '%';
-            rect.style.height = (item.selection.y2 - item.selection.y1) + '%';
+            if (anchored && item.anchor.sel) {
+              const s = item.anchor.sel;
+              rect.style.left = (s.x1 - iframeScroll.x) + 'px';
+              rect.style.top = (s.y1 - iframeScroll.y) + 'px';
+              rect.style.width = (s.x2 - s.x1) + 'px';
+              rect.style.height = (s.y2 - s.y1) + 'px';
+            } else {
+              rect.style.left = item.selection.x1 + '%';
+              rect.style.top = item.selection.y1 + '%';
+              rect.style.width = (item.selection.x2 - item.selection.x1) + '%';
+              rect.style.height = (item.selection.y2 - item.selection.y1) + '%';
+            }
             overlay.appendChild(rect);
           }
 
           const pin = document.createElement('div');
           pin.className = 'pin' + (item.status === 'resolved' ? ' resolved' : '') + (activeFeedbackId === item.id ? ' active' : '');
-          pin.style.left = item.x + '%';
-          pin.style.top = item.y + '%';
+          if (anchored) {
+            pin.style.left = (item.anchor.x - iframeScroll.x) + 'px';
+            pin.style.top = (item.anchor.y - iframeScroll.y) + 'px';
+          } else {
+            pin.style.left = item.x + '%';
+            pin.style.top = item.y + '%';
+          }
           pin.textContent = item.id;
           pin.onclick = (e) => { e.stopPropagation(); selectFeedback(item.id); };
           overlay.appendChild(pin);
@@ -1760,36 +1942,40 @@
       return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     }
 
-    // ---- Migrate old localStorage keys ----
+    // ---- Migración: fusionar claves viejas (por URL) en claves por dominio ----
     (function migrateOldData() {
       const keysToRemove = [];
+      const merged = {}; // origin -> data fusionada
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key.startsWith(STORAGE_KEY + '_')) {
-          const urlPart = key.slice((STORAGE_KEY + '_').length);
-          const normalized = normalizeUrl(urlPart);
-          if (normalized !== urlPart) {
-            const newKey = STORAGE_KEY + '_' + normalized;
-            if (!localStorage.getItem(newKey)) {
-              const data = localStorage.getItem(key);
-              localStorage.setItem(newKey, data);
-            }
-            keysToRemove.push(key);
-          }
-          try {
-            const data = JSON.parse(localStorage.getItem(key));
-            if (data && data.items) {
-              let changed = false;
-              data.items = data.items.map(item => {
-                if (!item.url) { changed = true; return { ...item, url: normalized, replies: item.replies || [] }; }
-                if (!item.replies) { changed = true; return { ...item, replies: [] }; }
-                return item;
-              });
-              if (changed) localStorage.setItem(key, JSON.stringify(data));
-            }
-          } catch(e) {}
+        if (!key.startsWith(STORAGE_KEY + '_') || key.endsWith('_draft')) continue;
+        const urlPart = key.slice((STORAGE_KEY + '_').length);
+        const origin = siteKey(urlPart);
+        let data;
+        try { data = JSON.parse(localStorage.getItem(key)); } catch(e) { continue; }
+        if (!data) continue;
+
+        const pageUrl = normalizeUrl(urlPart);
+        const items = (data.items || []).map(item => ({
+          ...item,
+          url: normalizeUrl(item.url || pageUrl),
+          replies: item.replies || []
+        }));
+
+        if (!merged[origin]) {
+          merged[origin] = { project: data.project || '', url: origin, items: [], nextId: 1 };
         }
+        if (data.project && !merged[origin].project) merged[origin].project = data.project;
+        merged[origin].items.push(...items);
+        if (key !== STORAGE_KEY + '_' + origin) keysToRemove.push(key);
       }
+      Object.keys(merged).forEach(origin => {
+        const data = merged[origin];
+        // Renumerar ids para evitar duplicados tras la fusión
+        data.items.forEach((item, i) => { item.id = i + 1; });
+        data.nextId = data.items.length + 1;
+        localStorage.setItem(STORAGE_KEY + '_' + origin, JSON.stringify(data));
+      });
       keysToRemove.forEach(k => localStorage.removeItem(k));
     })();
 
