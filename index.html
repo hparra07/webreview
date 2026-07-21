@@ -796,7 +796,7 @@
   <!-- Top Bar -->
   <div class="topbar">
     <div class="logo" onclick="showSplash()">WebReview</div>
-    <input type="text" class="project-input admin-only" id="projectName" placeholder="Project name...">
+    <input type="text" class="project-input admin-only" id="projectName" placeholder="Project name..." onblur="saveProjectName()" onkeydown="if(event.key==='Enter')this.blur()">
     <div class="url-input-wrap">
       <input type="url" id="urlInput" placeholder="Enter URL to review (e.g. https://example.com)" onkeydown="if(event.key==='Enter')manualLoadUrl()" />
       <button class="btn btn-primary" onclick="manualLoadUrl()">
@@ -1883,6 +1883,15 @@
 
     function siteOwnerUid() {
       return currentSiteOwnerUid || (currentUser && currentUser.uid);
+    }
+
+    // El campo "Project name" no tenía ningún listener: escribir ahí no
+    // llamaba a saveState(), así que el nombre solo quedaba guardado si
+    // coincidía con agregar un comentario. Ahora se guarda solo al salir
+    // del campo (blur/Enter), sin escribir a Firestore en cada tecla.
+    function saveProjectName() {
+      if (!currentUrl) return; // no hay proyecto abierto todavía
+      saveState();
     }
 
     async function saveState() {
