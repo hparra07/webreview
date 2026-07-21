@@ -784,8 +784,8 @@
     <div class="logo" onclick="showSplash()">WebReview</div>
     <input type="text" class="project-input admin-only" id="projectName" placeholder="Project name...">
     <div class="url-input-wrap">
-      <input type="url" id="urlInput" placeholder="Enter URL to review (e.g. https://example.com)" onkeydown="if(event.key==='Enter')loadUrl()" />
-      <button class="btn btn-primary" onclick="loadUrl()">
+      <input type="url" id="urlInput" placeholder="Enter URL to review (e.g. https://example.com)" onkeydown="if(event.key==='Enter')manualLoadUrl()" />
+      <button class="btn btn-primary" onclick="manualLoadUrl()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
         Load
       </button>
@@ -1128,6 +1128,7 @@
     function resetWorkspace() {
       feedbackItems = [];
       currentUrl = '';
+      currentSiteOwnerUid = null;
       activeFeedbackId = null;
       isImageMode = false;
       document.getElementById('urlInput').value = '';
@@ -1261,9 +1262,15 @@
 
       try {
         const userSnap = await db.collection('projects').doc(currentUser.uid).get();
-        if (userSnap.exists && userSnap.data().sheetsConfig) {
-          sheetsConfig = { url: '', connected: false, autoSync: true, ...userSnap.data().sheetsConfig };
+        const cloudSheets = userSnap.exists ? userSnap.data().sheetsConfig : null;
+        if (cloudSheets) {
+          sheetsConfig = { url: '', connected: false, autoSync: true, ...cloudSheets };
           localStorage.setItem(SHEETS_CONFIG_KEY, JSON.stringify(sheetsConfig));
+        } else if (sheetsConfig.connected && sheetsConfig.url) {
+          // Migración: esta cuenta conectó Sheets antes de que existiera la
+          // sincronización a la nube. Subimos lo que ya está en localStorage
+          // una sola vez, así los demás dispositivos lo reciben también.
+          await saveSheetsConfigToCloud();
         }
       } catch(e) {}
       initSyncState();
@@ -1613,6 +1620,7 @@
                   url: data.siteOrigin,
                   project: data.project || '',
                   ownerEmail: data.ownerEmail || userDoc.data().email || '',
+                  ownerUid: userDoc.id,
                   count: (data.items || []).length,
                   openCount: (data.items || []).filter(i => i.status === 'open').length,
                   lastModified: data.updatedAt ? data.updatedAt.toDate().toISOString() : ''
@@ -1630,6 +1638,7 @@
                 url: data.siteOrigin,
                 project: data.project || '',
                 ownerEmail: currentUser.email,
+                ownerUid: currentUser.uid,
                 count: (data.items || []).length,
                 openCount: (data.items || []).filter(i => i.status === 'open').length,
                 lastModified: data.updatedAt ? data.updatedAt.toDate().toISOString() : ''
@@ -1657,6 +1666,8 @@
       return projects.sort((a, b) => b.lastModified.localeCompare(a.lastModified));
     }
 
+    let renderedProjects = []; // último listado renderizado, para resolver clicks en las tarjetas
+
     async function renderProjects() {
       if (!currentUser) return;
       const grid = document.getElementById('projectsGrid');
@@ -1668,13 +1679,14 @@
           p.project.toLowerCase() === projectParam.toLowerCase()
         );
       }
+      renderedProjects = projects;
 
       if (projects.length === 0) {
         grid.innerHTML = '';
         return;
       }
-      grid.innerHTML = '<h4>Projects</h4>' + projects.map(p => `
-        <div class="project-card" onclick="document.getElementById('urlInput').value='${escapeHtml(p.url)}';loadUrl();">
+      grid.innerHTML = '<h4>Projects</h4>' + projects.map((p, i) => `
+        <div class="project-card" onclick="openProjectFromCard(${i})">
           <div class="project-card-title">${escapeHtml(p.project || extractDomain(p.url))}</div>
           <div class="project-card-url">${escapeHtml(p.url)}</div>
           ${p.ownerEmail && isAdmin ? `<div style="font-size:11px;color:var(--accent);margin-top:2px;">${escapeHtml(p.ownerEmail)}</div>` : ''}
@@ -1796,29 +1808,42 @@
     function closeSettings() { document.getElementById('settingsOverlay').classList.add('hidden'); }
 
     // ---- Core ----
+    // Cuando el admin abre el proyecto de un cliente, currentSiteOwnerUid apunta
+    // al UID del cliente (no del admin), así se lee/escribe en SU espacio de
+    // Firestore y el cliente ve los mismos comentarios que agrega el admin.
+    let currentSiteOwnerUid = null;
+
+    function siteOwnerUid() {
+      return currentSiteOwnerUid || (currentUser && currentUser.uid);
+    }
+
     async function saveState() {
       if (!currentUser) return;
+      const uid = siteOwnerUid();
       const origin = siteKey(currentUrl);
       const data = {
         project: document.getElementById('projectName').value,
         siteOrigin: origin,
-        ownerEmail: currentUser.email,
-        ownerName: currentUser.displayName || '',
+        ownerEmail: uid === currentUser.uid ? currentUser.email : (window.__currentProjectOwnerEmail || ''),
+        ownerName: uid === currentUser.uid ? (currentUser.displayName || '') : '',
         items: feedbackItems,
         nextId,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
       };
+      // No pisar el email/nombre del dueño real cuando el admin edita el proyecto de un cliente
+      if (uid !== currentUser.uid) { delete data.ownerEmail; delete data.ownerName; }
       // Also keep localStorage as offline cache
       localStorage.setItem(STORAGE_KEY + '_' + origin, JSON.stringify(data));
-      try { await siteRef(currentUser.uid, origin).set(data, { merge: true }); } catch(e) {}
+      try { await siteRef(uid, origin).set(data, { merge: true }); } catch(e) {}
     }
 
     async function loadState(url) {
       if (!currentUser) return;
+      const uid = siteOwnerUid();
       const origin = siteKey(url);
       let data = null;
       try {
-        const snap = await siteRef(currentUser.uid, origin).get();
+        const snap = await siteRef(uid, origin).get();
         if (snap.exists) data = snap.data();
       } catch(e) {
         // Offline: fall back to localStorage
@@ -1845,6 +1870,7 @@
 
     function showSplash() {
       currentUrl = '';
+      currentSiteOwnerUid = null;
       document.getElementById('splash').style.display = 'flex';
       document.getElementById('iframeContainer').style.display = 'none';
       document.getElementById('iframeBlocked').style.display = 'none';
@@ -1852,6 +1878,28 @@
       document.getElementById('toolbar').style.display = 'none';
       feedbackItems = [];
       renderProjects();
+    }
+
+    function openProjectFromCard(index) {
+      const p = renderedProjects[index];
+      if (!p) return;
+      openProject(p.url, p.ownerUid, p.ownerEmail);
+    }
+
+    // Abre el proyecto de un cliente desde la tarjeta del admin: apunta las
+    // lecturas/escrituras al espacio de ese cliente en Firestore, no al del admin.
+    function openProject(url, ownerUid, ownerEmail) {
+      currentSiteOwnerUid = ownerUid || null;
+      window.__currentProjectOwnerEmail = ownerEmail || '';
+      document.getElementById('urlInput').value = url;
+      loadUrl();
+    }
+
+    // Entrada manual de URL (input Enter / botón Load): siempre es un proyecto propio
+    function manualLoadUrl() {
+      currentSiteOwnerUid = null;
+      window.__currentProjectOwnerEmail = '';
+      loadUrl();
     }
 
     function loadUrl() {
