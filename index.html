@@ -1027,7 +1027,9 @@
 
     auth.onAuthStateChanged(async user => {
       if (user) {
+        const switchedUser = currentUser && currentUser.uid !== user.uid;
         currentUser = user;
+        if (switchedUser) resetWorkspace();
         const adminMode = user.email === ADMIN_EMAIL;
         document.getElementById('authOverlay').style.display = 'none';
         document.getElementById('userPill').style.display = 'flex';
@@ -1047,6 +1049,10 @@
           displayName: user.displayName || '',
           lastSeen: firebase.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
+        // Cargar config global del proxy (la define el admin, la leen todos)
+        await loadGlobalConfig();
+        // Migrar proyectos viejos del admin (localStorage → Firestore) una sola vez
+        if (adminMode) await migrateLocalToFirestore();
         renderProjects();
       } else {
         currentUser = null;
@@ -1076,24 +1082,50 @@
       const password = document.getElementById('authPassword').value;
       const errEl = document.getElementById('authError');
       if (!email || !password) { errEl.textContent = 'Enter email and password.'; return; }
+      if (isAuthSignUp && password.length < 6) {
+        errEl.textContent = 'Password must be at least 6 characters.';
+        return;
+      }
       const fn = isAuthSignUp
         ? auth.createUserWithEmailAndPassword.bind(auth)
         : auth.signInWithEmailAndPassword.bind(auth);
+      errEl.textContent = '';
       fn(email, password).catch(e => {
-        errEl.textContent = e.code === 'auth/wrong-password' ? 'Incorrect password.' :
-          e.code === 'auth/user-not-found' ? 'No account found with this email.' :
-          e.code === 'auth/email-already-in-use' ? 'Email already in use.' : e.message;
+        // Firebase v10 unifica "usuario no existe" y "contraseña incorrecta" en invalid-credential
+        errEl.textContent =
+          (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found')
+            ? "Email or password is incorrect. If you don't have an account yet, click Sign up below."
+          : e.code === 'auth/email-already-in-use' ? 'This email already has an account. Switch to Sign in.'
+          : e.code === 'auth/invalid-email' ? 'Invalid email address.'
+          : e.code === 'auth/weak-password' ? 'Password must be at least 6 characters.'
+          : e.message;
       });
+    }
+
+    function resetWorkspace() {
+      feedbackItems = [];
+      currentUrl = '';
+      activeFeedbackId = null;
+      isImageMode = false;
+      document.getElementById('urlInput').value = '';
+      const pn = document.getElementById('projectName');
+      if (pn) pn.value = '';
+      document.getElementById('splash').style.display = 'flex';
+      document.getElementById('toolbar').style.display = 'none';
+      document.getElementById('iframeContainer').style.display = 'none';
+      const imgC = document.getElementById('imageContainer');
+      if (imgC) imgC.style.display = 'none';
+      const blocked = document.getElementById('iframeBlocked');
+      if (blocked) blocked.style.display = 'none';
+      const frame = document.getElementById('previewFrame');
+      if (frame) frame.src = 'about:blank';
+      const grid = document.getElementById('projectsGrid');
+      if (grid) grid.innerHTML = '';
     }
 
     function authSignOut() {
       if (!confirm('Sign out?')) return;
-      auth.signOut().then(() => {
-        feedbackItems = []; currentUrl = '';
-        document.getElementById('splash').style.display = 'flex';
-        document.getElementById('toolbar').style.display = 'none';
-        document.getElementById('iframeContainer').style.display = 'none';
-      });
+      auth.signOut().then(() => resetWorkspace());
     }
 
     // ---- State ----
@@ -1111,10 +1143,8 @@
     let selectionRect = null;
 
     const urlParams = new URLSearchParams(window.location.search);
-    const isAdmin = urlParams.has('admin');
+    let isAdmin = false; // se define según el email logueado en onAuthStateChanged
     const projectParam = urlParams.get('project');
-
-    if (isAdmin) document.body.classList.add('admin-mode');
 
     // Google Sheets config
     const SHEETS_CONFIG_KEY = 'webreview_sheets_config';
@@ -1161,17 +1191,73 @@
       }
     }
 
-    function saveProxyConfig() {
-      proxyConfig.url = document.getElementById('proxyUrl').value.trim();
-      localStorage.setItem(PROXY_CONFIG_KEY, JSON.stringify(proxyConfig));
+    // Sube los proyectos guardados en localStorage a Firestore (solo admin, una vez)
+    async function migrateLocalToFirestore() {
+      if (localStorage.getItem('webreview_migrated_v1')) return;
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (!key.startsWith(STORAGE_KEY + '_') || key.endsWith('_draft')) continue;
+          let data;
+          try { data = JSON.parse(localStorage.getItem(key)); } catch(e) { continue; }
+          if (!data || !data.siteOrigin || !(data.items || []).length) continue;
+          const ref = siteRef(currentUser.uid, data.siteOrigin);
+          const snap = await ref.get();
+          if (snap.exists) continue; // no pisar lo que ya está en la nube
+          await ref.set({
+            project: data.project || '',
+            siteOrigin: data.siteOrigin,
+            ownerEmail: currentUser.email,
+            ownerName: currentUser.displayName || '',
+            items: data.items,
+            nextId: data.nextId || (data.items.length + 1),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        }
+        localStorage.setItem('webreview_migrated_v1', '1');
+      } catch(e) {}
+    }
+
+    // Config global del proxy: guardada en Firestore por el admin, leída por todos.
+    // Así cada cliente carga la URL del worker sin tener que configurarla.
+    async function loadGlobalConfig() {
+      try {
+        const snap = await db.collection('config').doc('global').get();
+        if (snap.exists) {
+          const g = snap.data();
+          if (g.proxyUrl) {
+            proxyConfig.url = g.proxyUrl;
+            proxyConfig.connected = true;
+            localStorage.setItem(PROXY_CONFIG_KEY, JSON.stringify(proxyConfig));
+          }
+        }
+      } catch(e) {}
       initProxyState();
     }
 
-    function disconnectProxy() {
+    async function saveProxyConfig() {
+      proxyConfig.url = document.getElementById('proxyUrl').value.trim();
+      proxyConfig.connected = !!proxyConfig.url;
+      localStorage.setItem(PROXY_CONFIG_KEY, JSON.stringify(proxyConfig));
+      // El admin publica la URL en Firestore para que la usen todos los clientes
+      if (currentUser && currentUser.email === ADMIN_EMAIL) {
+        try {
+          await db.collection('config').doc('global').set({ proxyUrl: proxyConfig.url }, { merge: true });
+        } catch(e) {}
+      }
+      initProxyState();
+    }
+
+    async function disconnectProxy() {
       proxyConfig = { url: '', connected: false };
       document.getElementById('proxyUrl').value = '';
       document.getElementById('proxyTestResult').innerHTML = '';
       localStorage.setItem(PROXY_CONFIG_KEY, JSON.stringify(proxyConfig));
+      if (currentUser && currentUser.email === ADMIN_EMAIL) {
+        try {
+          await db.collection('config').doc('global').set({ proxyUrl: '' }, { merge: true });
+        } catch(e) {}
+      }
       initProxyState();
     }
 
