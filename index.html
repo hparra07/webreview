@@ -1202,6 +1202,26 @@
     let iframeScroll = { x: 0, y: 0 }; // scroll actual del iframe proxificado
     let lastHover = null; // último elemento detectado bajo el mouse (via proxy)
     let hoverPending = false;
+    const pendingLocateRequests = new Map(); // requestId -> resolve() de la promesa
+
+    // Pregunta al iframe qué elemento del DOM hay en (x,y), relativo al overlay.
+    // Se usa para anclar el área arrastrada al elemento que hay debajo, con timeout
+    // por si el iframe no responde (sitio no proxificado, etc).
+    function locateElementAt(x, y) {
+      return new Promise(resolve => {
+        const iframe = document.getElementById('previewFrame');
+        if (!proxyReady || !iframe.contentWindow) { resolve(null); return; }
+        const requestId = 'loc_' + Math.random().toString(36).slice(2);
+        const timeout = setTimeout(() => {
+          pendingLocateRequests.delete(requestId);
+          resolve(null);
+        }, 400);
+        pendingLocateRequests.set(requestId, (result) => { clearTimeout(timeout); resolve(result); });
+        try {
+          iframe.contentWindow.postMessage({ type: 'webreview-locate', x, y, requestId }, '*');
+        } catch(e) { clearTimeout(timeout); pendingLocateRequests.delete(requestId); resolve(null); }
+      });
+    }
 
     function getProxyUrl(targetUrl) {
       if (!proxyConfig.connected || !proxyConfig.url) return null;
@@ -1350,6 +1370,14 @@
       if (e.data.type === 'webreview-hover-result') {
         hoverPending = false;
         updateElementHighlight(e.data);
+        return;
+      }
+      if (e.data.type === 'webreview-locate-result') {
+        const resolver = pendingLocateRequests.get(e.data.requestId);
+        if (resolver) {
+          pendingLocateRequests.delete(e.data.requestId);
+          resolver(e.data.result);
+        }
         return;
       }
       if (e.data.type === 'webreview-proxy-ready') {
@@ -1555,7 +1583,7 @@
         }
       });
 
-      overlay.addEventListener('mouseup', (e) => {
+      overlay.addEventListener('mouseup', async (e) => {
         if (!dragStart) return;
         const rect = dragStart.rect;
         const useAnchor = proxyReady && overlay.id === 'pinOverlay';
@@ -1570,20 +1598,34 @@
           const y2Pct = y1Pct + (sh / rect.height) * 100;
           const centerX = (x1Pct + x2Pct) / 2;
           const centerY = (y1Pct + y2Pct) / 2;
-          const anchor = useAnchor ? {
-            x: sx + sw / 2 + iframeScroll.x,
-            y: sy + sh / 2 + iframeScroll.y,
-            sel: { x1: sx + iframeScroll.x, y1: sy + iframeScroll.y, x2: sx + sw + iframeScroll.x, y2: sy + sh + iframeScroll.y },
-            selector: null
-          } : null;
-          showCommentForm(overlay, sx, sy + sh + 10, centerX, centerY, { x1: x1Pct, y1: y1Pct, x2: x2Pct, y2: y2Pct }, anchor);
           selectionRect.remove();
           selectionRect = null;
-        } else if (useAnchor && lastHover && lastHover.rect) {
-          // Click sobre un elemento detectado: anclar el pin a ese elemento del DOM
+
+          let anchor = null;
+          if (useAnchor) {
+            // Ubicamos el elemento real bajo el centro del área arrastrada,
+            // así el recuadro queda atado a ESE elemento (no a coordenadas fijas)
+            // y sigue funcionando aunque cambie el layout (panel abierto, tablet, mobile).
+            const loc = await locateElementAt(sx + sw / 2, sy + sh / 2);
+            if (loc && loc.path && loc.rect.width > 0 && loc.rect.height > 0) {
+              anchor = {
+                path: loc.path,
+                relX1: (sx - loc.rect.x) / loc.rect.width,
+                relY1: (sy - loc.rect.y) / loc.rect.height,
+                relX2: (sx + sw - loc.rect.x) / loc.rect.width,
+                relY2: (sy + sh - loc.rect.y) / loc.rect.height
+              };
+            } else {
+              // Fallback: sin elemento identificable, guardamos coordenadas absolutas
+              anchor = { x: sx + sw / 2 + iframeScroll.x, y: sy + sh / 2 + iframeScroll.y,
+                sel: { x1: sx + iframeScroll.x, y1: sy + iframeScroll.y, x2: sx + sw + iframeScroll.x, y2: sy + sh + iframeScroll.y } };
+            }
+          }
+          showCommentForm(overlay, sx, sy + sh + 10, centerX, centerY, { x1: x1Pct, y1: y1Pct, x2: x2Pct, y2: y2Pct }, anchor);
+        } else if (useAnchor && lastHover && lastHover.rect && lastHover.path) {
+          // Click sobre un elemento detectado: el pin queda atado a ESE elemento
+          // exacto (ruta estructural, no clase CSS), cubriendo su recuadro completo.
           const r = lastHover.rect;
-          const scrollX = lastHover.scrollX || 0;
-          const scrollY = lastHover.scrollY || 0;
           const xPct = ((r.x + r.width / 2) / rect.width) * 100;
           const yPct = ((r.y + r.height / 2) / rect.height) * 100;
           const sel = {
@@ -1592,12 +1634,7 @@
             x2: ((r.x + r.width) / rect.width) * 100,
             y2: ((r.y + r.height) / rect.height) * 100
           };
-          const anchor = {
-            x: r.x + scrollX + r.width / 2,
-            y: r.y + scrollY + r.height / 2,
-            sel: { x1: r.x + scrollX, y1: r.y + scrollY, x2: r.x + scrollX + r.width, y2: r.y + scrollY + r.height },
-            selector: lastHover.selector
-          };
+          const anchor = { path: lastHover.path, relX: 0.5, relY: 0.5, relX1: 0, relY1: 0, relX2: 1, relY2: 1 };
           clearElementHighlight();
           showCommentForm(overlay, r.x, r.y + r.height + 10, xPct, yPct, sel, anchor);
         } else {
@@ -1605,7 +1642,21 @@
           const cy = e.clientY - rect.top;
           const xPct = (cx / rect.width) * 100;
           const yPct = (cy / rect.height) * 100;
-          const anchor = useAnchor ? { x: cx + iframeScroll.x, y: cy + iframeScroll.y, sel: null, selector: null } : null;
+          let anchor = null;
+          if (useAnchor) {
+            // Sin hover previo (ej. click muy rápido): igual intentamos ubicar
+            // el elemento exacto bajo el punto para anclar por ruta de DOM.
+            const loc = await locateElementAt(cx, cy);
+            if (loc && loc.path && loc.rect.width > 0 && loc.rect.height > 0) {
+              anchor = {
+                path: loc.path,
+                relX: (cx - loc.rect.x) / loc.rect.width,
+                relY: (cy - loc.rect.y) / loc.rect.height
+              };
+            } else {
+              anchor = { x: cx + iframeScroll.x, y: cy + iframeScroll.y, sel: null };
+            }
+          }
           showCommentForm(overlay, cx, cy, xPct, yPct, null, anchor);
         }
         dragStart = null;
@@ -2173,15 +2224,22 @@
       const domPinsActive = proxyReady && proxySupportsPins && !isImageMode;
       if (domPinsActive) {
         const iframe = document.getElementById('previewFrame');
-        // El pin se posiciona SIEMPRE por coordenadas exactas del documento.
-        // No usamos el selector CSS: con clases repetidas apuntaba al primer
-        // elemento que coincidiera en vez del que se marcó.
+        // Cuando el pin tiene "path" (ruta estructural al elemento del DOM), el
+        // worker recalcula su posición contra ESE elemento en cada render — así
+        // sigue al contenido si cambia el layout (panel abierto, tablet, mobile).
+        // Si no hay path, usa las coordenadas absolutas como respaldo.
         const pinsForIframe = allVisible.filter(i => i.anchor).map(i => ({
           id: i.id,
           x: i.anchor.x,
           y: i.anchor.y,
           sel: i.anchor.sel || null,
-          selector: null,
+          path: i.anchor.path || null,
+          relX: i.anchor.relX,
+          relY: i.anchor.relY,
+          relX1: i.anchor.relX1,
+          relY1: i.anchor.relY1,
+          relX2: i.anchor.relX2,
+          relY2: i.anchor.relY2,
           status: i.status
         }));
         try {

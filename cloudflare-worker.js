@@ -52,6 +52,43 @@ const ELEMENT_PICKER_SCRIPT = `
     return tag;
   }
 
+  // Ruta estructural única hasta el elemento (nth-of-type desde <body>).
+  // A diferencia de un selector por clase, esta ruta identifica exactamente
+  // AL elemento que se clickeó, incluso si hay diez botones con la misma clase.
+  // Sobrevive a cambios de tamaño de viewport (desktop/tablet/mobile) porque
+  // el DOM no cambia al redimensionar, solo el layout visual.
+  function getDomPath(el) {
+    if (!el || el === document.body || el === document.documentElement) return '';
+    var parts = [];
+    var node = el;
+    while (node && node.nodeType === 1 && node !== document.body) {
+      var parent = node.parentNode;
+      if (!parent || !parent.children) break;
+      var tag = node.tagName;
+      var siblings = Array.prototype.filter.call(parent.children, function(c) { return c.tagName === tag; });
+      var idx = siblings.indexOf(node) + 1;
+      parts.unshift(tag + ':nth-of-type(' + idx + ')');
+      node = parent;
+    }
+    return parts.length ? 'body > ' + parts.join(' > ') : '';
+  }
+
+  function locateAt(x, y) {
+    var el = document.elementFromPoint(x, y);
+    if (el && el.closest && el.closest('#__webreview-pins')) el = null;
+    if (el && el.hasAttribute && el.hasAttribute('data-webreview-injected')) el = null;
+    if (!el || el === document.body || el === document.documentElement) return null;
+    var r = el.getBoundingClientRect();
+    return {
+      path: getDomPath(el),
+      selector: getSelector(el),
+      tag: el.tagName.toLowerCase(),
+      rect: { x: r.left, y: r.top, width: r.width, height: r.height },
+      scrollX: window.scrollX,
+      scrollY: window.scrollY
+    };
+  }
+
   document.addEventListener('mousemove', function(e) {
     if (!enabled) return;
     const target = e.target;
@@ -109,11 +146,37 @@ const ELEMENT_PICKER_SCRIPT = `
     var c = ensurePinsContainer();
     c.innerHTML = '';
     currentPins.forEach(function(p) {
-      // Posicionamiento por coordenadas exactas del documento (donde se hizo
-      // el click). No se usa el selector CSS: con clases repetidas terminaba
-      // apuntando al primer elemento coincidente en vez del marcado.
+      // Posición por defecto: coordenadas absolutas del documento tal como
+      // se guardaron (fallback si no hay ruta o el elemento ya no existe).
       var x = p.x, y = p.y;
       var selRect = p.sel || null;
+
+      // Si el pin tiene una ruta de DOM (nth-of-type), la resolvemos de nuevo
+      // en cada render: así el pin sigue al elemento real sin importar si el
+      // layout cambió (panel abierto, tablet, mobile, etc). No usa clases CSS,
+      // usa la posición estructural exacta del elemento que se clickeó.
+      if (p.path) {
+        try {
+          var el = document.querySelector(p.path);
+          if (el) {
+            var er = el.getBoundingClientRect();
+            var elLeft = er.left + window.scrollX;
+            var elTop = er.top + window.scrollY;
+            if (typeof p.relX === 'number' && typeof p.relY === 'number') {
+              x = elLeft + p.relX * er.width;
+              y = elTop + p.relY * er.height;
+            }
+            if (typeof p.relX1 === 'number') {
+              selRect = {
+                x1: elLeft + p.relX1 * er.width,
+                y1: elTop + p.relY1 * er.height,
+                x2: elLeft + p.relX2 * er.width,
+                y2: elTop + p.relY2 * er.height
+              };
+            }
+          }
+        } catch (err) {}
+      }
 
       // Recuadro del área, solo para el pin seleccionado
       if (p.id === activePinId && selRect) {
@@ -153,23 +216,17 @@ const ELEMENT_PICKER_SCRIPT = `
       renderPinsInPage();
     } else if (e.data && e.data.type === 'webreview-hover') {
       // El padre pregunta qué elemento hay en estas coordenadas (viewport)
-      var hovered = document.elementFromPoint(e.data.x, e.data.y);
-      if (hovered && hovered.closest && hovered.closest('#__webreview-pins')) hovered = null;
-      if (hovered && hovered.hasAttribute && hovered.hasAttribute('data-webreview-injected')) hovered = null;
-      if (hovered && (hovered === document.body || hovered === document.documentElement)) hovered = null;
-      if (hovered) {
-        var hr = hovered.getBoundingClientRect();
-        window.parent.postMessage({
-          type: 'webreview-hover-result',
-          selector: getSelector(hovered),
-          tag: hovered.tagName.toLowerCase(),
-          rect: { x: hr.left, y: hr.top, width: hr.width, height: hr.height },
-          scrollX: window.scrollX,
-          scrollY: window.scrollY
-        }, '*');
+      var loc = locateAt(e.data.x, e.data.y);
+      if (loc) {
+        window.parent.postMessage({ type: 'webreview-hover-result', selector: loc.selector, path: loc.path, tag: loc.tag, rect: loc.rect, scrollX: loc.scrollX, scrollY: loc.scrollY }, '*');
       } else {
         window.parent.postMessage({ type: 'webreview-hover-result', selector: null }, '*');
       }
+    } else if (e.data && e.data.type === 'webreview-locate') {
+      // Igual que hover, pero para una consulta puntual (ej: centro de un área
+      // arrastrada) que necesita respuesta identificada por requestId.
+      var locResult = locateAt(e.data.x, e.data.y);
+      window.parent.postMessage({ type: 'webreview-locate-result', requestId: e.data.requestId, result: locResult }, '*');
     }
   });
 
